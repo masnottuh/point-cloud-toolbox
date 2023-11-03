@@ -10,10 +10,11 @@ from pointCloudToolbox import *
 
 ########################################################################
 # Modify these variables to change the behavior of the program
+########################################################################
 num_visualization_demo_points = 5
-neighbors_for_surface_fit = [5]
+neighbors_for_surface_fit = [5,9,15]
 smooth_using_moving_mean, neighbors_for_moving_mean = True, 3
-voxel_size = [0.5] #set to zero if you don't need to downsample
+voxel_size = [0.5, 0.25, 0.1] #set to zero if you don't need to downsample
 use_feature_fitting = False #Currently Broken
 # smallest_characteristic_length = 1/10 # approximate ratio of the smallest feature to the size of the point cloud
 
@@ -36,7 +37,9 @@ if __name__ == '__main__':
 
             print(f'Running with starting neighbors of {neighbors} and voxel size of {voxel_size}')
 
-            pcl = PointCloud('./sphere.txt', downsample=True, voxel_size=voxel_size, k_neighbors=neighbors_for_tree)
+            pcl = PointCloud('./sridge.txt', downsample=True, voxel_size=voxel_size, k_neighbors=neighbors_for_tree)
+            pcl.remove_noise_from_point_cloud(k=neighbors, alpha=0.5)
+            # pcl.generate_sphere_point_cloud(radius=10, num_points=10000)
             # pcl.plot_surface()
  
             # rotation_rad_x = np.pi*rotation_angle_x/180 
@@ -47,8 +50,8 @@ if __name__ == '__main__':
             print("planting tree")
             pcl.plant_kdtree(k_neighbors=neighbors)
 
-            if smooth_using_moving_mean:
-                pcl.smooth_point_cloud_by_neighborhood_moving_mean(k_neighbors=neighbors) 
+            # if smooth_using_moving_mean:
+            #     pcl.smooth_point_cloud_by_neighborhood_moving_mean(k_neighbors=neighbors) 
 
             print("plotting knn points")
             pcl.visualize_knn_for_n_random_points(num_points_to_plot=num_visualization_demo_points, k_neighbors=neighbors)
@@ -62,10 +65,11 @@ if __name__ == '__main__':
             # print("plotting parametric curvaturess")
             # pcl.plot_parametric_curvatures()
             
-            pcl.find_optimal_num_neighbors()
+            # pcl.find_optimal_num_neighbors()
             pcl.fit_quadric_surfaces()
             # pcl.plot_quadric_surfaces()
             pcl.calculate_quadric_curvatures()
+            # pcl.filter_outlier_curvatures_per_neighborhood(threshold_std_devs=3)
             pcl.plot_points_colored_by_quadric_curvatures()
             
             # print("calculating pseudo curvatures")

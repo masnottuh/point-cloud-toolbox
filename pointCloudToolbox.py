@@ -16,6 +16,7 @@ import random
 from mayavi import mlab
 from sympy.plotting import plot3d_parametric_surface
 
+
 class PointCloud:
 
     def __init__(self, file_path, downsample, voxel_size, k_neighbors, max_points_per_voxel=1):
@@ -73,7 +74,7 @@ class PointCloud:
             return (cumsum[N:] - cumsum[:-N]) / float(N)
 
     @staticmethod
-    def filter_outliers_median(data, threshold=2.6):
+    def filter_outliers_median(data, threshold=100):
         data = np.array(data)
         median = np.median(data)
         mad = np.median(np.abs(data - median))
@@ -97,7 +98,7 @@ class PointCloud:
         return data.tolist()
 
     @staticmethod
-    def filter_outliers_absolute(data, max_abs=0.01):
+    def filter_outliers_absolute(data, max_abs=100):
         data = np.array(data)
         median = np.median(data)
         mad = np.median(np.abs(data - median))
@@ -113,6 +114,110 @@ class PointCloud:
         data[is_outlier] = np.nan
         
         return data.tolist()
+    
+    def remove_noise_from_point_cloud(self, k, alpha):
+        
+        tree = cKDTree(self.points)
+        smoothed_points = np.zeros_like(self.points)
+        
+        for i, point in enumerate(self.points):
+            # Find the k-nearest neighbors, including the point itself
+            distances, indices = tree.query(point, k=k+1)
+            
+            # Compute the weighted average of the neighbors
+            weights = 1 / (distances + 1e-8)  # Adding a small value to avoid division by zero
+            weights /= weights.sum()
+            average_point = np.sum(self.points[indices] * weights[:, np.newaxis], axis=0)
+            
+            # Blend the original point with the average point
+            smoothed_points[i] = alpha * average_point + (1 - alpha) * point
+            
+        self.points = smoothed_points
+
+    def filter_outlier_curvatures_per_neighborhood(self, threshold_std_devs=3, threshold_multiplier=3):
+        points_with_K_and_H = np.column_stack((self.points, self.quadric_gaussian_curvatures, self.quadric_mean_curvatures))
+
+        # Build tree
+        kdtree = cKDTree(points_with_K_and_H[:, 0:2])
+
+        k = []
+        h = []
+        bad_points_outlier = set()  # Use a set to avoid duplicates
+        bad_points_threshold = set()  # Use a set to avoid duplicates
+        # for i, point in enumerate(points_with_K_and_H):
+        #     if (abs(point[3]) > 10.0):
+        #         points_with_K_and_H[i][3] = np.nan
+        #         bad_points_threshold.add(tuple(point))  # Add to bad_points set
+
+        #     if (abs(point[4]) > 10.0):
+        #         points_with_K_and_H[i][4] = np.nan
+        #         bad_points_threshold.add(tuple(point))  # Add to bad_points set
+
+        # Calculate the mean and std dev of the gaussian and mean curvatures for the neighborhood
+        gaussian_curvatures = neighbors[:, 3]
+        mean_curvatures = neighbors[:, 4]
+
+        # Calculate means and std devs
+        gaussian_curvatures_mean = float(np.mean(gaussian_curvatures))
+        gaussian_curvatures_std = float(np.std(gaussian_curvatures))
+        mean_curvatures_mean = float(np.mean(mean_curvatures))
+        mean_curvatures_std = float(np.std(mean_curvatures))
+          
+        for i, point in enumerate(points_with_K_and_H):
+
+            # Query to get k_neighbors
+            dists, neighbor_indices = kdtree.query(point[0:2], self.k_neighbors+1)
+            neighbors = points_with_K_and_H[neighbor_indices]
+            neighbors = np.delete(neighbors, 0, axis=0)
+            
+            
+
+            # If any points have a gaussian or mean curvature outside of the threshold, replace it with the mean
+            k_s = point[3]
+            h_s = point[4]
+
+            # Check for Gaussian curvature outliers
+            
+            if (abs(point[3]) > threshold_multiplier*gaussian_curvatures_mean):
+                k_s = np.nan
+                bad_points_outlier.add(tuple(point))  # Add to bad_points set
+
+            # Check for Mean curvature outliers
+            
+            if (abs(point[4]) > threshold_multiplier*mean_curvatures_mean):
+                h_s = np.nan
+                bad_points_outlier.add(tuple(point))  # Add to bad_points set
+
+            k.append(k_s)
+            h.append(h_s)
+
+        # Print statistics
+        print(max(k))
+        print(min(k))
+        print(max(h))
+        print(min(h))
+        bad_points_count = len(bad_points_outlier) + len(bad_points_threshold)
+        print(f"bad points: {bad_points_count}, which is {bad_points_count/len(points_with_K_and_H) * 100:.2f}% of the points. {len(bad_points_outlier)} were outliers, and {len(bad_points_threshold)} were outside the threshold.")
+
+        # Update the class attributes
+        self.quadric_gaussian_curvatures = k
+        self.quadric_mean_curvatures = h
+
+    def generate_sphere_point_cloud(self, radius, num_points):
+        self.points = []
+        for _ in range(num_points):
+            phi = np.random.uniform(0, 2 * np.pi)
+            costheta = np.random.uniform(-1, 1)
+
+            theta = np.arccos(costheta)
+            r = radius  # Fixed at the sphere's radius
+
+            x = r * np.sin(theta) * np.cos(phi)
+            y = r * np.sin(theta) * np.sin(phi)
+            z = r * np.cos(theta)
+            
+            self.points.append(np.array([x, y, z]))
+        self.points = np.array(self.points)
 
     def readFromFile(self):
 
@@ -497,7 +602,7 @@ class PointCloud:
         k_neighbors = 2 
         tree = self.kdtree
         points = self.points
-        normals = self.normals
+        # normals = self.normals
         random_indexes = self.random_indexes
         random_points = self.random_points
 
@@ -512,7 +617,7 @@ class PointCloud:
             test_results[point[0]]['principal_2'] = []
             test_results[point[0]]['neighbors'] = []
 
-            for num_neighbors in range(2, int(len(points)/1000)):
+            for num_neighbors in range(2, 25):
 
                 dists, neighbor_indices = tree.query(np.array(point), num_neighbors+1)
                 
@@ -583,7 +688,7 @@ class PointCloud:
             axx.set_title(f'Neighbor Test, Voxel Size = {self.voxel_size}')
             axx.set_xlabel('num neighbors')
             axx.set_ylabel('Gaussian Curvature')
-            axx.scatter(test_results[point[0]]['neighbors'],test_results[point[0]]['gaussian'], c='b', s=1)
+            axx.scatter(test_results[point[0]]['neighbors'],test_results[point[0]]['gaussian'], c='b', s=2)
             
             pickle.dump(figy, open(f'Gaussian Curvature {i}.pickle', 'wb'))
 
@@ -592,14 +697,15 @@ class PointCloud:
             axxa.set_title(f'Neighbor Test, Voxel Size = {self.voxel_size}')
             axxa.set_xlabel('num neighbors')
             axxa.set_ylabel('Mean Curvature ^ 2')
-            axxa.scatter(test_results[point[0]]['neighbors'],test_results[point[0]]['mean squared'], c='b', s=1)
+            axxa.scatter(test_results[point[0]]['neighbors'],test_results[point[0]]['mean squared'], c='b', s=2)
             
             pickle.dump(figz, open(f'Mean Curvature Squared {i}.pickle', 'wb'))
 
     def plot_points_colored_by_quadric_curvatures(self):
         n = 1
-        self.quadric_gaussian_curvatures = self.filter_outliers_absolute(self.quadric_gaussian_curvatures)
-        self.quadric_mean_curvatures = self.filter_outliers_absolute(self.quadric_mean_curvatures)
+
+        # self.filter_outlier_curvatures_per_neighborhood()
+
         # Gaussian Curvature from quadric calculations
         fig_curvature_K = plt.figure()
         ax_curvature_K = fig_curvature_K.add_subplot(111, projection='3d')
@@ -624,18 +730,18 @@ class PointCloud:
 
         # plt.show()
 
-        # Plot histograms
-        fig_hist_K_fund = plt.figure()
-        plt.hist(np.array(self.quadric_gaussian_curvatures, dtype=float), bins=100)
-        plt.title(f'Hist Gaussian Curvature from quadric surface, K = {self.k_neighbors}, Voxel Size = {self.voxel_size}')
-        plt.tight_layout()
-        pickle.dump(fig_hist_K_fund, open(f'Hist Gaussian Curvature from quadric surface, K = {self.k_neighbors}, Voxel Size = {self.voxel_size}.pickle', 'wb'))
+        # # Plot histograms
+        # fig_hist_K_fund = plt.figure()
+        # plt.hist(np.array(self.quadric_gaussian_curvatures, dtype=float), bins=100)
+        # plt.title(f'Hist Gaussian Curvature from quadric surface, K = {self.k_neighbors}, Voxel Size = {self.voxel_size}')
+        # plt.tight_layout()
+        # pickle.dump(fig_hist_K_fund, open(f'Hist Gaussian Curvature from quadric surface, K = {self.k_neighbors}, Voxel Size = {self.voxel_size}.pickle', 'wb'))
 
-        fig_hist_H_fund = plt.figure()
-        plt.hist(np.array(self.quadric_mean_curvatures, dtype=float), bins=100)
-        plt.title(f'Hist Mean Curvature from quadric surface, K = {self.k_neighbors}, Voxel Size = {self.voxel_size}')
-        plt.tight_layout()
-        pickle.dump(fig_hist_H_fund, open(f'Hist Mean Curvature from quadric surface, K = {self.k_neighbors}, Voxel Size = {self.voxel_size}.pickle', 'wb'))
+        # fig_hist_H_fund = plt.figure()
+        # plt.hist(np.array(self.quadric_mean_curvatures, dtype=float), bins=100)
+        # plt.title(f'Hist Mean Curvature from quadric surface, K = {self.k_neighbors}, Voxel Size = {self.voxel_size}')
+        # plt.tight_layout()
+        # pickle.dump(fig_hist_H_fund, open(f'Hist Mean Curvature from quadric surface, K = {self.k_neighbors}, Voxel Size = {self.voxel_size}.pickle', 'wb'))
 
         # plt.show()
 
@@ -668,13 +774,14 @@ class PointCloud:
             g = gradient = np.array([fx, fy, fz])
             h = hessian = np.array([[fxx, fxy, 0], [fxy, fyy, 0], [0, 0, fzz]])
             adjoint_of_hessian = adj_h = np.array([[fyy*fzz-fyz*fzy, fyz*fzx-fyx*fzz, fxy*fzy-fyy*fzx], [fxz*fzy-fyx*fzz, fxx*fzz-fxz*fzx, fxy*fzx-fxx*fzy], [fxy*fyz-fxz*fyy, fyx*fxz-fxx*fyz, fxx*fyy-fxy*fyx]])
+            mag_g = np.sqrt(g.dot(g))
 
             # Gaussian Curvature
-            K_g = (np.inner(np.inner(g,adj_h),g.T))/(np.linalg.norm(g)**4)
+            K_g = (np.inner(np.inner(g,adj_h),g.T))/(mag_g**4)
 
             # Mean Curvature
-            K_m = (np.inner(np.inner(g,h),g.T)-np.linalg.norm(g)**2*np.trace(h))/(2*np.linalg.norm(g)**3)
-            K_m = K_m**2
+            K_m = (np.inner(np.inner(g,h),g.T)-(mag_g**2)*np.trace(h))/(2*(mag_g**3))
+            # K_m = K_m**2
             # print(K_m)
 
             # Principal Curvatures
@@ -825,8 +932,8 @@ class PointCloud:
             self.K_pseudo.append(H_pseudo)
             self.H_pseudo.append(K_pseudo)
 
-            self.K_pseudo = self.filter_outliers_median(self.K_pseudo)
-            self.H_pseudo = self.filter_outliers_median(self.H_pseudo)
+            # self.K_pseudo = self.filter_outliers_median(self.K_pseudo)
+            # self.H_pseudo = self.filter_outliers_median(self.H_pseudo)
 
     def calculate_parametric_curvatures_direct(self):
         self.K_from_components_of_fundamental_forms = []
@@ -873,8 +980,8 @@ class PointCloud:
             self.K_from_components_of_fundamental_forms.append(K_from_components_of_fundamental_forms)
             self.H_from_components_of_fundamental_forms.append(H_from_components_of_fundamental_forms)
 
-            self.K_from_components_of_fundamental_forms = self.filter_outliers_median(self.K_from_components_of_fundamental_forms)
-            self.H_from_components_of_fundamental_forms = self.filter_outliers_median(self.H_from_components_of_fundamental_forms)
+            # self.K_from_components_of_fundamental_forms = self.filter_outliers_median(self.K_from_components_of_fundamental_forms)
+            # self.H_from_components_of_fundamental_forms = self.filter_outliers_median(self.H_from_components_of_fundamental_forms)
 
     def calculate_parametric_curvatures_symbolic(self):
         self.K_from_components_of_fundamental_forms = []
@@ -938,8 +1045,8 @@ class PointCloud:
             self.K_from_components_of_fundamental_forms.append(K_from_components_of_fundamental_forms)
             self.H_from_components_of_fundamental_forms.append(H_from_components_of_fundamental_forms)
 
-            self.K_from_components_of_fundamental_forms = self.filter_outliers_median(self.K_from_components_of_fundamental_forms)
-            self.H_from_components_of_fundamental_forms = self.filter_outliers_median(self.H_from_components_of_fundamental_forms)
+            # self.K_from_components_of_fundamental_forms = self.filter_outliers_median(self.K_from_components_of_fundamental_forms)
+            # self.H_from_components_of_fundamental_forms = self.filter_outliers_median(self.H_from_components_of_fundamental_forms)
 
     def pickle_figure(self, fig, k, v):
         pickle.dump(fig, open(f'{k}_neighbors_and_{v}_voxel_size.pickle', 'wb'))
@@ -1078,10 +1185,10 @@ class PointCloud:
         self.pca_K_values = K_from_pca
         self.pca_H_values = H_from_pca
 
-        self.pca_principal_curvature_values_1 = self.filter_outliers_median(self.pca_principal_curvature_values_1)
-        self.pca_principal_curvature_values_2 = self.filter_outliers_median(self.pca_principal_curvature_values_2)
-        self.pca_K_values = self.filter_outliers_median(self.pca_K_values)
-        self.pca_H_values = self.filter_outliers_median(self.pca_H_values)
+        # self.pca_principal_curvature_values_1 = self.filter_outliers_median(self.pca_principal_curvature_values_1)
+        # self.pca_principal_curvature_values_2 = self.filter_outliers_median(self.pca_principal_curvature_values_2)
+        # self.pca_K_values = self.filter_outliers_median(self.pca_K_values)
+        # self.pca_H_values = self.filter_outliers_median(self.pca_H_values)
 
     def plot_principal_curvatures_from_principal_component_analysis(self):
         figg = plt.figure()
