@@ -1,5 +1,12 @@
 #personal
 ./literature
+./kong_toy_plots
+./s-ridge_plots
+./sphere_plots
+literature/
+kong_toy_plots/
+s-ridge_plots/
+sphere_plots/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
