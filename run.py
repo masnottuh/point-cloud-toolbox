@@ -10,9 +10,9 @@ from pointCloudToolbox import *
 # Modify these variables to change the behavior of the program
 ########################################################################
 num_visualization_demo_points = 5
-neighbors_for_surface_fit = [25, 30, 35, 40, 45, 50] #minimum of 4!
-voxel_sizes = [3, 2, 1, 0.5, 0] #set to zero if you don't need to downsample
-cloud_types = ['sridge'] #sridge, sphere, torus, klein, dupin, monkey, bumpy_spheroid
+neighbors_for_surface_fit = [10, 15, 25, 30, 35, 40, 45, 50] #minimum of 4!
+voxel_sizes = [0] #set to zero if you don't need to downsample
+cloud_types = ['bunny'] #sridge, sphere, torus, klein, dupin, monkey, bumpy_spheroid, mobius, bunny
 surface_fitting_method = 'explicit' #implicit or explicit
 ########################################################################
 
@@ -26,7 +26,7 @@ if __name__ == '__main__':
 
                 neighbors_for_tree = neighbors
 
-                # voxel_size = 0
+                voxel_size = 0
 
                 downsample = False
 
@@ -63,6 +63,15 @@ if __name__ == '__main__':
                 elif cloud_type == 'bumpy_spheroid':
                     print(f'Running for bumpy spheroid')
                     pcl = PointCloud('./sample_scans/bumpy_spheroid.txt', downsample, voxel_size=voxel_size, k_neighbors=neighbors_for_tree, output_path = './output/bumpy_spheroid/')
+
+                elif cloud_type == 'mobius':
+                    print(f'Running for mobius strip')
+                    pcl = PointCloud('./sample_scans/mobius_strip.txt', downsample, voxel_size=voxel_size, k_neighbors=neighbors_for_tree, output_path = './output/mobius_strip/')
+
+                elif cloud_type == 'bunny':
+                    print(f'Running for bunny')
+                    pcl = PointCloud('./sample_scans/bunny.txt', downsample, voxel_size=voxel_size, k_neighbors=neighbors_for_tree, output_path = './output/bunny/')
+                    
 
                 else:
                     print('Cloud type not recognized, exiting')
