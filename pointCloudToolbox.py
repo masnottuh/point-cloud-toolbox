@@ -4,34 +4,29 @@
 # rhutton@unr.edu or sam@samhutton.net
 ########################################################################
 import numpy as np
-from scipy.spatial import cKDTree
 import matplotlib.pyplot as plt
 import matplotlib.pyplot as plt
 import scipy as sp
-from sklearn.preprocessing import PolynomialFeatures
-from sklearn.linear_model import LinearRegression
 from scipy.linalg import eigh
 import sympy as sympy
+from matplotlib.patches import Patch
 from scipy.optimize import least_squares
 import pickle
-import random
-from mayavi import mlab
-from sympy.plotting import plot3d_parametric_surface
+from scipy.optimize import minimize
 from scipy.linalg import svd
-import meshplot as mp
-from meshplot import plot, subplot, interact
-mp.offline()
+
 
 
 class PointCloud:
 
-    def __init__(self, file_path, downsample, voxel_size, k_neighbors, max_points_per_voxel=1):
+    def __init__(self, file_path, downsample, voxel_size, k_neighbors, output_path, max_points_per_voxel=1):
         #initial parameters
         self.file_path = file_path
         self.downsample = downsample
         self.k_neighbors = k_neighbors
         self.voxel_size = voxel_size
         self.max_points_per_voxel = max_points_per_voxel
+        self.output_path = output_path
         self.readFromFile()
 
         #secondary parameters
@@ -41,11 +36,150 @@ class PointCloud:
         self.l2_norm = np.linalg.norm(self.points, 2)
         self.infinity_norm = np.linalg.norm(self.points, np.inf)
 
-    @staticmethod
-    def running_mean_vector(x, N):
-        cumsum = np.cumsum(np.insert(x, 0, 0)) 
-        return (cumsum[N:] - cumsum[:-N]) / float(N)
-    
+    def readFromFile(self):
+
+        points = np.loadtxt(self.file_path)
+        # print("Points and normals loaded from file.")
+
+        self.points = points[:, 0:3]
+        self.normals = points[:, 3:6]
+
+        #shift the points to the positive quadrant
+        self.points[:, 0] = self.points[:, 0] - np.max(self.points[:, 0])
+        self.points[:, 1] = self.points[:, 1] - np.max(self.points[:, 1])
+
+        #downsample if set to true, otherwise just use the points as is
+        if self.downsample==True:
+            self.points, self.normals = self.downsample_point_cloud_by_grid()
+            #shift the points to the positive quadrant
+            self.points[:, 0] = self.points[:, 0] - np.min(self.points[:, 0])
+            self.points[:, 1] = self.points[:, 1] - np.min(self.points[:, 1])
+            # print(f"Point cloud downsampled using voxel size of {self.voxel_size} and max points per voxel of {self.max_points_per_voxel}.")
+
+        self.x_domain = [np.min(self.points[:, 0]), np.max(self.points[:, 0])]
+        self.y_domain = [np.min(self.points[:, 1]), np.max(self.points[:, 1])]
+        self.z_domain = [np.min(self.points[:, 2]), np.max(self.points[:, 2])]
+
+    def plant_kdtree(self, k_neighbors):
+        self.k_neighbors = k_neighbors
+        box_size = [int(np.ceil(self.voxel_size*self.k_neighbors)/2), int(np.ceil(self.voxel_size*self.k_neighbors)/2)]
+
+        # self.kdtree = sp.spatial.cKDTree(self.points, box_size) #to use box size for even distribution, CURRENTLY BROKEN
+        self.kdtree = sp.spatial.cKDTree(np.array(self.points))
+
+        self.dists = []
+        self.neighbor_indices = []
+        for i, point in enumerate(self.points):
+            dists, neighbor_indices = self.kdtree.query(np.array(point), k_neighbors+1) # +1 because will also return self
+            self.dists.append(dists[1:])
+            self.neighbor_indices.append(neighbor_indices[1:])
+        
+
+        # self.dists, self.neighbor_indices = self.kdtree.query(self.points, k_neighbors)
+        # count_neighbors(self, other, r[, p, ...])
+        # Count how many nearby pairs can be formed.
+
+        # query(self, x[, k, eps, p, ...])
+        # Query the kd-tree for nearest neighbors
+
+        # query_ball_point(self, x, r[, p, eps, ...])
+        # Find all points within distance r of point(s) x.
+
+        # query_ball_tree(self, other, r[, p, eps])
+        # Find all pairs of points between self and other whose distance is at most r
+
+        # query_pairs(self, r[, p, eps, output_type])
+        # Find all pairs of points in self whose distance is at most r.
+
+        # sparse_distance_matrix(self, other, max_distance)
+        # Compute a sparse distance matrix
+
+    def plot_surface(self):
+        fig = plt.figure()
+        ax = fig.add_subplot(1, 1, 1, projection='3d')
+        ax.scatter(self.points[:, 0], self.points[:, 1], self.points[:, 2], c='b', s=1.5)
+        ax.set_title('Point Cloud')
+        ax.set_xlabel('X')
+        ax.set_ylabel('Y')
+        ax.set_zlabel('Z')
+        pickle.dump(fig, open(f'{self.output_path}point_cloud_k_{self.k_neighbors}_voxel_size_{self.voxel_size}.pickle', 'wb'))
+        # plt.show()
+        # ax.set_xlim3d(-max(self.points[:,0]), max(self.points[:,0]))
+        # ax.set_ylim3d(-max(self.points[:,1]), max(self.points[:,1]))
+        # plt.show()
+
+    def rotate_point_cloud(self, rotation_angle_x, rotation_angle_y, rotation_angle_z):
+
+        # Rotate the point cloud to be in the x-y plane
+        points = np.column_stack((self.points[:, 1], self.points[:, 2], self.points[:, 0]))
+        # Sort the point cloud by x coordinate
+        sorted_indices = np.lexsort((points[:, 0], points[:, 1]))
+        points = points[sorted_indices]
+
+        # Center the point cloud
+        center = np.mean(self.points, axis=0)
+        centered = self.points - center
+        self.points = centered
+
+        # Create rotation matrices
+        rotation_matrix_x = np.array([
+            [1, 0, 0],
+            [0, np.cos(rotation_angle_x), -np.sin(rotation_angle_x)],
+            [0, np.sin(rotation_angle_x), np.cos(rotation_angle_x)]
+        ])
+
+        rotation_matrix_y = np.array([
+            [np.cos(rotation_angle_y), 0, np.sin(rotation_angle_y)],
+            [0, 1, 0],
+            [-np.sin(rotation_angle_y), 0, np.cos(rotation_angle_y)]
+        ])
+
+        rotation_matrix_z = np.array([
+            [np.cos(rotation_angle_y), -np.sin(rotation_angle_y), 0],
+            [np.sin(rotation_angle_y), np.cos(rotation_angle_y), 0],
+            [0, 0, 1]
+        ])
+
+        # Apply the rotations
+        self.points = centered.dot(rotation_matrix_x).dot(rotation_matrix_y).dot(rotation_matrix_z)
+        self.points = self.points + center
+
+    def downsample_point_cloud_by_grid(self):
+        # Calculate the minimum and maximum coordinates of the point cloud
+        xyz = self.points[:, :3]
+        min_bounds = np.min(xyz, axis=0)
+        max_bounds = np.max(xyz, axis=0)
+        max_points_per_voxel=1
+
+        # Calculate the number of voxels in each dimension
+        num_voxels = np.ceil((max_bounds - min_bounds) / self.voxel_size).astype(int)
+
+        # Calculate the indices of the voxels for each point
+        voxel_indices = ((self.points[:, :3] - min_bounds) / self.voxel_size).astype(int)
+
+        # Initialize a dictionary to store the indices of points in each voxel
+        voxel_point_indices = {}
+
+        # Group point indices into voxels
+        for i, indices in enumerate(voxel_indices):
+            voxel_key = tuple(indices)
+            if voxel_key not in voxel_point_indices:
+                voxel_point_indices[voxel_key] = []
+            voxel_point_indices[voxel_key].append(i)
+
+        # Select points from each voxel with up to 'max_points_per_voxel' points
+        selected_indices = []
+        for indices in voxel_point_indices.values():
+            selected_indices.extend(indices[:max_points_per_voxel])
+
+        # Extract the selected points
+        downsampled_points = self.points[selected_indices]
+        downsampled_normals = self.normals[selected_indices]
+        
+
+        # Update the class attribute 'points' with the downsampled points
+        return downsampled_points, downsampled_normals
+
     @staticmethod
     def running_mean_outlier(x, N):
 
@@ -121,123 +255,206 @@ class PointCloud:
         
         return data.tolist()
     
-    def filter_outliers_by_std_dev(self, num_std_devs):
-        n = num_std_devs
+    @staticmethod
+    def get_best_fit_plane_and_rotate(points):
 
-        data = np.array(self.K_quadratic)
-        mean = np.mean(data)
-        std_dev = np.std(data)
+        # centroid = np.mean(points, axis=0)
+
+        centered_points = points
+
+        Cov = np.cov(centered_points, rowvar=False)
+        U, S, Vt = svd(Cov, full_matrices=True)
+
+        # Extract the normal vector
+        normal = Vt[-1]
+
+        # Calculate finite difference vectors between points
+        finite_diffs = np.diff(points, axis=0)
+
+        # Normalize the normal vector for accurate dot product calculations
+        normal_normalized = normal / np.linalg.norm(normal)
+
+        # Determine the direction of the majority of finite difference vectors
+        dot_products = np.dot(finite_diffs, normal_normalized)
+
+        # If the majority of finite difference vectors have a negative dot product with the normal vector
+        if np.sum(dot_products < 0) > (len(dot_products) / 2):
+            # Flip the normal vector
+            normal = -normal
+
+        vec1 = normal
+        vec2 = np.array([0, 0, 1])
+
+        a, b = (vec1 / np.linalg.norm(vec1)).reshape(3), (vec2 / np.linalg.norm(vec2)).reshape(3)
+        v = np.cross(a, b)
+        c = np.dot(a, b)
+        s = np.linalg.norm(v)
+
+        kmat = np.array([[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]])
+
+        rotation_matrix = np.eye(3) + kmat + kmat.dot(kmat) * ((1 - c) / (s ** 2))
+        rotated_points = np.dot(rotation_matrix, points.T).T
+        # rotated_normal = np.dot(rotation_matrix, normal)
+
+        points = rotated_points
+
+        return points
+    
+    @staticmethod
+    def plot_3d_points(points, title, ax):
+        ax.scatter(points[:, 0], points[:, 1], points[:, 2])
+        ax.set_title(title)
+        ax.set_xlabel('X')
+        ax.set_ylabel('Y')
+        ax.set_zlabel('Z')
+
+    @staticmethod
+    def fit_quadratic_surface(points):
+        a = points[:,0]
+        b = points[:,1]
+        c = points[:,2]
+
+        def quadratic_surface(params, a, b):
+            A, B, C, D, E, F = params
+            return A*a**2 + B*b**2 + C*a*b + D*a + E*b + F
+
+        # Define the objective function for least squares (residuals)
+        def objective_function(params, a, b, c):
+            return quadratic_surface(params, a, b) - c
+
+        # Initial guess for the parameters
+        initial_guess = np.ones(6)
+
+        # Perform least squares optimization
+        result = least_squares(objective_function, initial_guess, args=(a, b, c))
+
+        # The optimal parameters
+        params_optimal = result.x
+
+        # Unpack the optimal parameters
+        A, B, D, E, F, G = params_optimal
+
+        return A, B, D, E, F, G
+    
+    @staticmethod
+    def fit_implicit_quadric_surface(points):
+        # Construct the design matrix for the quadratic form
+        A = np.column_stack((
+            points[:, 0]**2,  # x^2
+            points[:, 1]**2,  # y^2
+            points[:, 2]**2,  # z^2
+            points[:, 0]*points[:, 1],  # xy
+            points[:, 0]*points[:, 2],  # xz
+            points[:, 1]*points[:, 2],  # yz
+            points[:, 0],  # x
+            points[:, 1],  # y
+            points[:, 2],  # z
+            np.ones(points.shape[0])  # Constant term
+        ))
+
+        # Define the objective function (least squares)
+        def objective_function(coefficients):
+            return np.sum((A @ coefficients)**2)
+
+        # Define the constraint ||b|| - 1 = 0
+        def constraint(coefficients):
+            return np.linalg.norm(coefficients) - 1
+
+        # Initial guess
+        initial_guess = np.ones(A.shape[1])
+
+        # Define the constraint as a dictionary
+        cons = ({'type': 'eq', 'fun': constraint})
+
+        # Solve the constrained minimization problem
+        result = minimize(objective_function, initial_guess, constraints=cons)
+
+        # Return the coefficients from the minimization result
+        return result.x
+
+    @staticmethod
+    def calculate_explicit_quadratic_curvatures(coefficients):
+
+        # x = point[0]
+        # y = point[1]
+
+        x = 0
+        y = 0
+
+        a, b, c, d, e, f = coefficients
+
+        # parametric surface
+        F = a*(x**2) + b*(y**2) + c*(x*y) + d*(x) + e*(y) + f
+
+        Fx = 2*a*x + c*y + d
+        Fxx = 2*a
+        Fy = 2*b*y + c*x + e
+        Fyy = 2*b
+        Fxy = c
+
+        # mean and gaussian curvatures 
+        # https://en.wikipedia.org/wiki/Gaussian_curvature
+        # https://en.wikipedia.org/wiki/Mean_curvature
+        K_g = (Fxx*Fyy - Fxy**2)/((1 + Fx**2 + Fy**2)**2)
+        K_h = ((1+Fx**2)*(Fyy)-2*Fx*Fy*Fxy+(1+Fy**2)*Fxx)/((1+Fx**2+Fy**2)**(3/2))
+
+        # principal Curvatures
+        k1 = K_h + np.sqrt(K_h**2 - K_g)
+        k2 = K_h- np.sqrt(K_h**2 - K_g)
+
+        return K_g, K_h, k1, k2
+
+    @staticmethod
+    def calculate_implicit_quadric_curvatures(coefficients):
+
+        # x = point[0]
+        # y = point[1]
+        # z = point[2]
+
+        x = 0
+        y = 0
+        z = 0
+
+        A, B, C, D, E, F, G, H, I, J = coefficients
+
+        func = A*(x**2) + B*(y**2) + C*(z**2) + D*x*y + E*x*z + F*y*z + G*x + H*y + I*z + J
+
+        # calculate the partial derivatives of the surface Ax2+By2+Cz2+Dxy+Exz+Fyz+Gx+Hy+Jz+K=0.
+        fx = 2*A*x + D*y + E*z + G
+        fy = 2*B*y + D*x + F*z + H
+        fz = 2*C*z + E*x + F*y + I
+        fxx = 2*A
+        fyy = 2*B
+        fzz = 2*C
+        fxy = D
+        fxz = E
+        fyz = F
+        fyx = D
+        fzx = E
+        fzy = F
+
+        g = gradient = np.array([fx, fy, fz])
+        mag_g = np.sqrt(g.dot(g))
+        hess_f = hessian = np.array([[fxx, fxy, fxz], [fyx, fyy, fyz], [fzx, fzy, fzz]])
+        trace_hess = fxx + fyy + fzz
+
+        hess_with_grads = np.array([[fxx, fxy, fxz, fx], [fyx, fyy, fyz, fy], [fzx, fzy, fzz, fz], [fx, fy, fz, 0]])
+
+        # mean and gaussian curvatures 
+        # https://en.wikipedia.org/wiki/Gaussian_curvature
+        # https://en.wikipedia.org/wiki/Mean_curvature
+        K_g = (np.linalg.det(hess_f))/(mag_g**4)
+        K_h = (np.dot(np.dot(g, hess_f), g.T) - (mag_g**2)*trace_hess)/(2*(mag_g**3))
         
-        lower_limit = mean - (n * std_dev)
-        upper_limit = mean + (n * std_dev)
-        
-        filtered_data = np.copy(data)  # Make a copy to avoid modifying the original array
-        outliers = (data < lower_limit) | (data > upper_limit)
-        filtered_data[outliers] = np.nan  # Replace outliers with np.nan
-        self.K_quadratic = np.array(filtered_data.tolist())
+        # principal curvatures
+        k1 = K_h + np.sqrt(K_h**2 - K_g)
+        k2 = K_h- np.sqrt(K_h**2 - K_g)
 
-        data = np.array(self.H_quadratic)
-        mean = np.mean(data)
-        std_dev = np.std(data)
-        
-        lower_limit = mean - (n * std_dev)
-        upper_limit = mean + (n * std_dev)
-        
-        filtered_data = np.copy(data)  # Make a copy to avoid modifying the original array
-        outliers = (data < lower_limit) | (data > upper_limit)
-        filtered_data[outliers] = np.nan  # Replace outliers with np.nan
-        self.H_quadratic = np.array(filtered_data.tolist())
-
-    def remove_noise_from_point_cloud(self, k, alpha):
-        
-        tree = cKDTree(self.points)
-        smoothed_points = np.zeros_like(self.points)
-        
-        for i, point in enumerate(self.points):
-            # Find the k-nearest neighbors, including the point itself
-            distances, indices = tree.query(point, k=k+1)
-            
-            # Compute the weighted average of the neighbors
-            weights = 1 / (distances + 1e-8)  # Adding a small value to avoid division by zero
-            weights /= weights.sum()
-            average_point = np.sum(self.points[indices] * weights[:, np.newaxis], axis=0)
-            
-            # Blend the original point with the average point
-            smoothed_points[i] = alpha * average_point + (1 - alpha) * point
-            
-        self.points = smoothed_points
-
-    def filter_outlier_curvatures_per_neighborhood(self, threshold_std_devs=3, threshold_multiplier=3):
-        points_with_K_and_H = np.column_stack((self.points, self.quadric_gaussian_curvatures, self.quadric_mean_curvatures))
-
-        # Build tree
-        kdtree = cKDTree(points_with_K_and_H[:, 0:2])
-
-        k = []
-        h = []
-        bad_points_outlier = set()  # Use a set to avoid duplicates
-        bad_points_threshold = set()  # Use a set to avoid duplicates
-        # for i, point in enumerate(points_with_K_and_H):
-        #     if (abs(point[3]) > 10.0):
-        #         points_with_K_and_H[i][3] = np.nan
-        #         bad_points_threshold.add(tuple(point))  # Add to bad_points set
-
-        #     if (abs(point[4]) > 10.0):
-        #         points_with_K_and_H[i][4] = np.nan
-        #         bad_points_threshold.add(tuple(point))  # Add to bad_points set
-
-        # Calculate the mean and std dev of the gaussian and mean curvatures for the neighborhood
-        gaussian_curvatures = neighbors[:, 3]
-        mean_curvatures = neighbors[:, 4]
-
-        # Calculate means and std devs
-        gaussian_curvatures_mean = float(np.mean(gaussian_curvatures))
-        gaussian_curvatures_std = float(np.std(gaussian_curvatures))
-        mean_curvatures_mean = float(np.mean(mean_curvatures))
-        mean_curvatures_std = float(np.std(mean_curvatures))
-          
-        for i, point in enumerate(points_with_K_and_H):
-
-            # Query to get k_neighbors
-            dists, neighbor_indices = kdtree.query(point[0:2], self.k_neighbors+1)
-            neighbors = points_with_K_and_H[neighbor_indices]
-            neighbors = np.delete(neighbors, 0, axis=0)
-            
-            
-
-            # If any points have a gaussian or mean curvature outside of the threshold, replace it with the mean
-            k_s = point[3]
-            h_s = point[4]
-
-            # Check for Gaussian curvature outliers
-            
-            if (abs(point[3]) > threshold_multiplier*gaussian_curvatures_mean):
-                k_s = np.nan
-                bad_points_outlier.add(tuple(point))  # Add to bad_points set
-
-            # Check for Mean curvature outliers
-            
-            if (abs(point[4]) > threshold_multiplier*mean_curvatures_mean):
-                h_s = np.nan
-                bad_points_outlier.add(tuple(point))  # Add to bad_points set
-
-            k.append(k_s)
-            h.append(h_s)
-
-        # Print statistics
-        print(max(k))
-        print(min(k))
-        print(max(h))
-        print(min(h))
-        bad_points_count = len(bad_points_outlier) + len(bad_points_threshold)
-        print(f"bad points: {bad_points_count}, which is {bad_points_count/len(points_with_K_and_H) * 100:.2f}% of the points. {len(bad_points_outlier)} were outliers, and {len(bad_points_threshold)} were outside the threshold.")
-
-        # Update the class attributes
-        self.quadric_gaussian_curvatures = k
-        self.quadric_mean_curvatures = h
+        return K_g, K_h, k1, k2
 
     def generate_sphere_point_cloud(self, radius, num_points):
         self.points = []
+        self.normals = []
         for _ in range(num_points):
             phi = np.random.uniform(0, 2 * np.pi)
             costheta = np.random.uniform(-1, 1)
@@ -248,160 +465,17 @@ class PointCloud:
             x = r * np.sin(theta) * np.cos(phi)
             y = r * np.sin(theta) * np.sin(phi)
             z = r * np.cos(theta)
+
+            nx = x / radius  # Normal vector components (since it's a sphere, they are the same as the coordinates)
+            ny = y / radius
+            nz = z / radius
             
             self.points.append(np.array([x, y, z]))
+            self.normals.append(np.array([nx, ny, nz]))
         self.points = np.array(self.points)
+        self.normals = np.array(self.normals)
 
-    def generate_monkey_saddle_point_cloud(self, min_x, max_x, min_y, max_y, num_points):
-        
-        def monkey_saddle(x, y):
-            return x**3 - 3*x*y**2
-        
-        self.points = []
-        for _ in range(num_points):
-            # Generate random points for x and y
-            num_points = 1000
-            x = np.random.uniform(min_x, max_x, num_points)
-            y = np.random.uniform(min_y, max_y, num_points)
-            z = monkey_saddle(x, y)
-            self.points.append(np.column_stack((x, y, z)))
-
-    def readFromFile(self):
-
-        points = np.loadtxt(self.file_path)
-        # print("Points and normals loaded from file.")
-
-        self.points = points[:, 0:3]
-        self.normals = points[:, 3:6]
-
-        #shift the points to the positive quadrant
-        self.points[:, 0] = self.points[:, 0] - np.max(self.points[:, 0])
-        self.points[:, 1] = self.points[:, 1] - np.max(self.points[:, 1])
-
-        #downsample if set to true, otherwise just use the points as is
-        if self.downsample==True:
-            self.points, self.normals = self.downsample_point_cloud_by_grid()
-            #shift the points to the positive quadrant
-            self.points[:, 0] = self.points[:, 0] - np.min(self.points[:, 0])
-            self.points[:, 1] = self.points[:, 1] - np.min(self.points[:, 1])
-            # print(f"Point cloud downsampled using voxel size of {self.voxel_size} and max points per voxel of {self.max_points_per_voxel}.")
-
-        self.x_domain = [np.min(self.points[:, 0]), np.max(self.points[:, 0])]
-        self.y_domain = [np.min(self.points[:, 1]), np.max(self.points[:, 1])]
-        self.z_domain = [np.min(self.points[:, 2]), np.max(self.points[:, 2])]
-
-    def uniform_grid_resampling(self):
-        point_cloud = self.points
-        normals = self.normals
-        grid_spacing = self.voxel_size
-        max_points_per_voxel = self.max_points_per_voxel
-        # Calculate the minimum and maximum coordinates (bounding box) of the point cloud.
-        min_coords = np.min(point_cloud, axis=0)
-        max_coords = np.max(point_cloud, axis=0)
-
-        # Create a 3D grid with the specified grid spacing.
-        grid_x = np.arange(min_coords[0], max_coords[0], grid_spacing)
-        grid_y = np.arange(min_coords[1], max_coords[1], grid_spacing)
-        grid_z = np.arange(min_coords[2], max_coords[2], grid_spacing)
-        
-        # Create a grid of cell centers in 3D space.
-        grid_centers = np.array(np.meshgrid(grid_x, grid_y, grid_z)).T.reshape(-1, 3)
-
-        # Initialize arrays to store resampled points and normals.
-        resampled_points = []
-        resampled_normals = []
-
-        # Build a k-d tree for efficient nearest-neighbor search.
-        kdtree = cKDTree(point_cloud)
-
-        # Iterate through each grid cell and find the nearest point.
-        for grid_center in grid_centers:
-            # Query the nearest point in the original point cloud.
-            _, nearest_point_index = kdtree.query(grid_center)
-            
-            # Append the nearest point and its corresponding normal.
-            resampled_points.append(point_cloud[nearest_point_index])
-            resampled_normals.append(normals[nearest_point_index])
-
-        # Convert the resampled points and normals to numpy arrays.
-        resampled_points = np.array(resampled_points)
-        resampled_normals = np.array(resampled_normals)
-
-        return resampled_points, resampled_normals
-
-    def voxel_grid_downsampling(self):
-        point_cloud = self.points
-        normals = self.normals
-        voxel_size = self.voxel_size
-        max_points_per_voxel = self.max_points_per_voxel
-
-        # Calculate voxel indices for each point
-        voxel_indices = np.floor(point_cloud / voxel_size).astype(int)
-
-        # Calculate the voxel centers
-        voxel_centers = (voxel_indices + 0.5) * voxel_size
-
-        # Find unique voxel indices to select one point per voxel
-        unique_voxel_indices, voxel_counts = np.unique(voxel_indices, return_counts=True)
-
-        # Initialize arrays to store the downsampled point cloud
-        downsampled_points = np.zeros((len(unique_voxel_indices), 3))
-        downsampled_normals = np.zeros((len(unique_voxel_indices), 3))
-
-        for i, voxel_index in enumerate(unique_voxel_indices):
-            # Find all points in the current voxel
-            points_in_voxel = point_cloud[(voxel_indices == voxel_index).all(axis=1)]
-
-            if len(points_in_voxel) > 0:
-                # Calculate distances from voxel center to all points in the voxel
-                distances = np.linalg.norm(points_in_voxel - voxel_centers[i], axis=1)
-
-                # Find the index of the closest point
-                closest_point_index = np.argmin(distances)
-
-                # Store the closest point and its normal in the downsampled arrays
-                downsampled_points[i] = points_in_voxel[closest_point_index]
-                downsampled_normals[i] = normals[(voxel_indices == voxel_index).all(axis=1)][closest_point_index]
-
-        return downsampled_points, downsampled_normals
-            
-    def downsample_point_cloud_uniformly(self):
-
-        kdtree = cKDTree(self.points)
-        points = self.points
-        normals = self.normals
-        voxel_size = self.voxel_size
-        max_points_per_voxel = self.max_points_per_voxel
-
-
-        # Initialize lists to store selected points and normals
-        selected_points = []
-        selected_normals = []
-
-        # Calculate the voxel grid based on voxel_size
-        min_bounds = np.min(points, axis=0)
-        max_bounds = np.max(points, axis=0)
-        num_voxels = np.ceil((max_bounds - min_bounds) / voxel_size).astype(int)
-        
-        for x in range(num_voxels[0]):
-            for y in range(num_voxels[1]):
-                for z in range(num_voxels[2]):
-                    voxel_center = min_bounds + np.array([x, y, z]) * voxel_size
-
-                    # Find all points within a certain radius (Poisson disk radius)
-                    search_radius = voxel_size / 2.0
-                    nearby_point_indices = kdtree.query_ball_point(voxel_center, search_radius)
-
-                    if nearby_point_indices:
-                        # Randomly select points from the nearby points
-                        random.shuffle(nearby_point_indices)
-                        num_points_to_select = min(len(nearby_point_indices), max_points_per_voxel)
-                        selected_points.extend(points[nearby_point_indices[:num_points_to_select]])
-                        selected_normals.extend(normals[nearby_point_indices[:num_points_to_select]])
-
-        return np.array(selected_points), np.array(selected_normals)
-    
-    def downsample_point_cloud_by_grid_DEPRECATED(self, max_points_per_voxel=1):
+   
         point_cloud = self.points
         normals = self.normals
         voxel_size = self.voxel_size
@@ -440,126 +514,6 @@ class PointCloud:
         
         return ddownsampled_point_cloud, dnormals
 
-    def downsample_point_cloud_by_grid(self):
-        # Calculate the minimum and maximum coordinates of the point cloud
-        xyz = self.points[:, :3]
-        min_bounds = np.min(xyz, axis=0)
-        max_bounds = np.max(xyz, axis=0)
-        max_points_per_voxel=1
-
-        # Calculate the number of voxels in each dimension
-        num_voxels = np.ceil((max_bounds - min_bounds) / self.voxel_size).astype(int)
-
-        # Calculate the indices of the voxels for each point
-        voxel_indices = ((self.points[:, :3] - min_bounds) / self.voxel_size).astype(int)
-
-        # Initialize a dictionary to store the indices of points in each voxel
-        voxel_point_indices = {}
-
-        # Group point indices into voxels
-        for i, indices in enumerate(voxel_indices):
-            voxel_key = tuple(indices)
-            if voxel_key not in voxel_point_indices:
-                voxel_point_indices[voxel_key] = []
-            voxel_point_indices[voxel_key].append(i)
-
-        # Select points from each voxel with up to 'max_points_per_voxel' points
-        selected_indices = []
-        for indices in voxel_point_indices.values():
-            selected_indices.extend(indices[:max_points_per_voxel])
-
-        # Extract the selected points
-        downsampled_points = self.points[selected_indices]
-        downsampled_normals = self.normals[selected_indices]
-        
-
-        # Update the class attribute 'points' with the downsampled points
-        return downsampled_points, downsampled_normals
-
-    def plot_surface(self):
-        fig = plt.figure()
-        ax = fig.add_subplot(1, 1, 1, projection='3d')
-        ax.scatter(self.points[:, 0], self.points[:, 1], self.points[:, 2], c='b', s=1.5)
-        ax.set_title('Point Cloud')
-        ax.set_xlabel('X')
-        ax.set_ylabel('Y')
-        ax.set_zlabel('Z')
-        pickle.dump(fig, open(f'point_cloud_k_{self.k_neighbors}_voxel_size_{self.voxel_size}.pickle', 'wb'))
-        # plt.show()
-        # ax.set_xlim3d(-max(self.points[:,0]), max(self.points[:,0]))
-        # ax.set_ylim3d(-max(self.points[:,1]), max(self.points[:,1]))
-        # plt.show()
-
-    def rotate_point_cloud(self, rotation_angle_x, rotation_angle_y, rotation_angle_z):
-
-        # Rotate the point cloud to be in the x-y plane
-        points = np.column_stack((self.points[:, 1], self.points[:, 2], self.points[:, 0]))
-        # Sort the point cloud by x coordinate
-        sorted_indices = np.lexsort((points[:, 0], points[:, 1]))
-        points = points[sorted_indices]
-
-        # Center the point cloud
-        center = np.mean(self.points, axis=0)
-        centered = self.points - center
-        self.points = centered
-
-        # Create rotation matrices
-        rotation_matrix_x = np.array([
-            [1, 0, 0],
-            [0, np.cos(rotation_angle_x), -np.sin(rotation_angle_x)],
-            [0, np.sin(rotation_angle_x), np.cos(rotation_angle_x)]
-        ])
-
-        rotation_matrix_y = np.array([
-            [np.cos(rotation_angle_y), 0, np.sin(rotation_angle_y)],
-            [0, 1, 0],
-            [-np.sin(rotation_angle_y), 0, np.cos(rotation_angle_y)]
-        ])
-
-        rotation_matrix_z = np.array([
-            [np.cos(rotation_angle_y), -np.sin(rotation_angle_y), 0],
-            [np.sin(rotation_angle_y), np.cos(rotation_angle_y), 0],
-            [0, 0, 1]
-        ])
-
-        # Apply the rotations
-        self.points = centered.dot(rotation_matrix_x).dot(rotation_matrix_y).dot(rotation_matrix_z)
-        self.points = self.points + center
-
-    def plant_kdtree(self, k_neighbors):
-        self.k_neighbors = k_neighbors
-        box_size = [int(np.ceil(self.voxel_size*self.k_neighbors)/2), int(np.ceil(self.voxel_size*self.k_neighbors)/2)]
-
-        # self.kdtree = sp.spatial.cKDTree(self.points, box_size) #to use box size for even distribution, CURRENTLY BROKEN
-        self.kdtree = sp.spatial.cKDTree(np.array(self.points))
-
-        self.dists = []
-        self.neighbor_indices = []
-        for i, point in enumerate(self.points):
-            dists, neighbor_indices = self.kdtree.query(np.array(point), k_neighbors+1) # +1 because will also return self
-            self.dists.append(dists[1:])
-            self.neighbor_indices.append(neighbor_indices[1:])
-        
-
-        # self.dists, self.neighbor_indices = self.kdtree.query(self.points, k_neighbors)
-        # count_neighbors(self, other, r[, p, ...])
-        # Count how many nearby pairs can be formed.
-
-        # query(self, x[, k, eps, p, ...])
-        # Query the kd-tree for nearest neighbors
-
-        # query_ball_point(self, x, r[, p, eps, ...])
-        # Find all points within distance r of point(s) x.
-
-        # query_ball_tree(self, other, r[, p, eps])
-        # Find all pairs of points between self and other whose distance is at most r
-
-        # query_pairs(self, r[, p, eps, output_type])
-        # Find all pairs of points in self whose distance is at most r.
-
-        # sparse_distance_matrix(self, other, max_distance)
-        # Compute a sparse distance matrix
-    
     def visualize_knn_for_n_random_points(self, num_points_to_plot, k_neighbors):
 
         fig = plt.figure()
@@ -580,200 +534,47 @@ class PointCloud:
             ax.scatter(point[0], point[1], point[2], c='b', s=1)
             ax.scatter(neighbors[:, 0], neighbors[: , 1], neighbors[: ,2], c='r', s=1)
 
-        pickle.dump(fig, open(f'nearest_neighbors_k_{self.k_neighbors}_voxel_size_{self.voxel_size}.pickle', 'wb'))
+        pickle.dump(fig, open(f'{self.output_path}nearest_neighbors_k_{self.k_neighbors}_voxel_size_{self.voxel_size}.pickle', 'wb'))
         # plt.show()
-
-    def plot_quadric_surfaces(self):
-
-        for i, index in enumerate(self.random_indexes):
-            point = self.points[index]
-            A, B, C, D, E, F, G, H, I, J = self.quadric_coefficients[i]
-            mlab.clf()
-            x, y, z = np.mgrid[-1000:1000:50j, -1000:1000:50j, -1000:1000:50j]
-            f = A*x*x+B*y*y+C*z*z+D*x*y+E*x*z+F*y*z+G*x+H*y+I*z+J
-            # zed = -(2*A + J + G*x + 2*B*y + H*y + D*x*y)/(2*C + I + E*x + F*y)
-            # yeh = -(2 *A + J + G *x + 2 *C *z + I *z + E *x *z)/(2 *B + H + D* x + F *z)
-            # ecks = -(2 *A + J + 2 *B *y + H *y + 2* C *z + I* z + F* y* z)/(G + D* y + E *z)
-            mlab.points3d(point[0], point[1], point[2], scale_factor=1)
-            mlab.figure()
-            mlab.contour3d(x, y, z, f)
-            mlab.axes()
-            mlab.show()
-            # plot3d_parametric_surface(ecks, yeh, zed, (x, -5, 5), (y, -5, 5))
-
-    def plot_quadratic_surfaces_fitted(self):
-
-        # print(f'Plotting quadratic surfaces for {len(points_to_plot)} points.')
-
-        fig1 = plt.figure()
-        ax1 = fig1.add_subplot(1, 1, 1, projection='3d')
-        ax1.set_title(f'Quadratic Surfaces Fitted to Neighborhoods  K = {self.k_neighbors}, Voxel Size = {self.voxel_size}')
-
-        for i, index in enumerate(self.random_indexes):
-
-            point = self.points[index]
-            neighbors = self.points[self.neighbor_indices[index]]
-            ax1.scatter(point[0], point[1], point[2], c='b', s=1)
-            ax1.scatter(neighbors[:, 0], neighbors[: , 1], neighbors[: ,2], c='r', s=1)
-
-        for i, index in enumerate(self.random_indexes):
-
-            ax1.plot_surface(self.X[index], self.Y[index], self.Z[index], rstride=1, cstride=1, alpha=0.5)
-    
-
-        ax1.set_zlabel('Z')
-        ax1.set_ylabel('Y')
-        ax1.set_xlabel('X')
-
-        pickle.dump(fig1, open(f'quadratic_surfaces_k_{self.k_neighbors}_voxel_size_{self.voxel_size}.pickle', 'wb'))
-            
-        # plt.show()
-    
-    def find_optimal_num_neighbors_quadric(self):
-        k_neighbors = 2 
-        tree = self.kdtree
-        points = self.points
-        # normals = self.normals
-        random_indexes = self.random_indexes
-        random_points = self.random_points
-
-        test_results = {}
-
-        for i, point in enumerate(random_points):
-            test_results[point[0]] = {}
-            test_results[point[0]]['gaussian'] = []
-            test_results[point[0]]['mean'] = []
-            test_results[point[0]]['principal_1'] = []
-            test_results[point[0]]['principal_2'] = []
-            test_results[point[0]]['neighbors'] = []
-
-            for num_neighbors in range(2, 25):
-
-                dists, neighbor_indices = tree.query(np.array(point), num_neighbors+1)
-                
-                neighbors = points[neighbor_indices[1:]]
-
-                min_x, max_x = point[0]-5*self.voxel_size, point[0]+5*self.voxel_size
-                min_y, max_y = point[1]-5*self.voxel_size, point[1]+5*self.voxel_size
-                min_z, max_z = point[2]-5*self.voxel_size, point[2]+5*self.voxel_size
-                
-                X,Y,Z = np.meshgrid(np.arange(min_x, max_x, 0.5)), np.meshgrid(np.arange(min_y, max_y, 0.5)), np.meshgrid(np.arange(min_z, max_z, 0.5))
-
-                def quadric_surface(params, points):
-                    A, B, C, D, E, F, G, H, I, J = params
-                    x, y, z = points.T
-                    return A * x ** 2 + B * y ** 2 + C * z ** 2 + D * x * y + E * x * z + F * y * z + G * x + H * y + I * z + J
-
-                def error(params, points):
-                    return quadric_surface(params, points)
-
-                initial_params = np.ones(10)  # Initial guess for coefficients
-
-                result = least_squares(error, initial_params, args=(neighbors,))
-                optimized_params = result.x
-
-                A, B, C, D, E, F, G, H, I, J = optimized_params
-
-                #calculate the partial derivatives of the surface Ax2+By2+Cz2+Dxy+Exz+Fyz+Gx+Hy+Jz+K=0.
-                fx = 2*A*point[0] + D*point[1] + E*point[2] + G
-                fy = 2*B*point[1] + D*point[0] + F*point[2] + H
-                fz = 2*C*point[2] + E*point[0] + F*point[1] + I
-                fxx = 2*A
-                fyy = 2*B
-                fzz = 2*C
-                fxy = D
-                fxz = E
-                fyz = F
-                fyx = D
-                fzx = E
-                fzy = F
-
-                g = gradient = np.array([fx, fy, fz])
-                h = hessian = np.array([[fxx, fxy, fxz], [fxy, fyy, fyz], [fzx, fzy, fzz]])
-                adjoint_of_hessian = adj_h = np.array([[fyy*fzz-fyz*fzy, fyz*fzx-fyx*fzz, fxy*fzy-fyy*fzx], [fxz*fzy-fyx*fzz, fxx*fzz-fxz*fzx, fxy*fzx-fxx*fzy], [fxy*fyz-fxz*fyy, fyx*fxz-fxx*fyz, fxx*fyy-fxy*fyx]])
-                mag_g = np.sqrt(g.dot(g))
-
-                # Gaussian Curvature
-                K_g = (np.dot(np.dot(g, adj_h),g))/(mag_g**4)
-
-                # Mean Curvature
-                K_m = (np.dot(np.dot(g, adjoint_of_hessian), g.T))/(2*(mag_g)**4)
-                # K_m = K_m**2
-                # print(K_m)
-
-                # Principal Curvatures
-                k1 = K_m + np.sqrt(K_m**2 - K_g)
-                k2 = K_m - np.sqrt(K_m**2 - K_g)
-                # print(k1, k2)
-
-                test_results[point[0]]['neighbors'].append(num_neighbors)
-                test_results[point[0]]['gaussian'].append(K_g)
-                test_results[point[0]]['mean'].append(K_m)
-                # test_results[point[0]]['mean squared'].append(K_m_squared)
-                test_results[point[0]]['principal_1'].append(k1)
-                test_results[point[0]]['principal_2'].append(k2)
-
-        for i, point in enumerate(random_points):
-            #plot test results
-            figy = plt.figure()
-            axx = figy.add_subplot(1, 1, 1)
-            axx.set_title(f'Neighbor Test, Voxel Size = {self.voxel_size}')
-            axx.set_xlabel('num neighbors')
-            axx.set_ylabel('Gaussian Curvature')
-            axx.scatter(test_results[point[0]]['neighbors'],test_results[point[0]]['gaussian'], c='b', s=2)
-            
-            pickle.dump(figy, open(f'Gaussian Curvature {i}.pickle', 'wb'))
-
-            figz = plt.figure()
-            axxa = figz.add_subplot(1, 1, 1)
-            axxa.set_title(f'Neighbor Test, Voxel Size = {self.voxel_size}')
-            axxa.set_xlabel('num neighbors')
-            axxa.set_ylabel('Mean Curvature')
-            axxa.scatter(test_results[point[0]]['neighbors'],test_results[point[0]]['mean'], c='b', s=2)
-            
-            pickle.dump(figz, open(f'Mean Curvature {i}.pickle', 'wb'))
 
     def plot_points_colored_by_quadric_curvatures(self):
-        n = 1
-
-        # self.filter_outlier_curvatures_per_neighborhood()
 
         # Gaussian Curvature from quadric calculations
         fig_curvature_K = plt.figure()
         ax_curvature_K = fig_curvature_K.add_subplot(111, projection='3d')
-        sc = ax_curvature_K.scatter(self.points[n-1:, 0], self.points[n-1:, 1], self.points[n-1:, 2], c=self.quadric_gaussian_curvatures, cmap='viridis', s=1)
+        sc = ax_curvature_K.scatter(self.points[:, 0], self.points[:, 1], self.points[:, 2], c=self.K_quadric, cmap='viridis', s=1)
         fig_curvature_K.colorbar(sc, ax=ax_curvature_K)
         plt.tight_layout()
         ax_curvature_K.view_init(azim=90, elev=85)
         ax_curvature_K.set_axis_off()
         ax_curvature_K.set_title(f'Gaussian Curvature from quadric surface, K = {self.k_neighbors}, Voxel Size = {self.voxel_size}')
-        pickle.dump(fig_curvature_K, open(f'Gaussian Curvature from quadric surface, K = {self.k_neighbors}, Voxel Size = {self.voxel_size}.pickle', 'wb'))
+        pickle.dump(fig_curvature_K, open(f'{self.output_path}Gaussian Curvature from quadric surface, K = {self.k_neighbors}, Voxel Size = {self.voxel_size}.pickle', 'wb'))
 
         # Mean Curvature from quadric surface
         fig_curvature_H = plt.figure()
         ax_curvature_H = fig_curvature_H.add_subplot(111, projection='3d')
-        sc = ax_curvature_H.scatter(self.points[n-1:, 0], self.points[n-1:, 1], self.points[n-1:, 2], c=self.quadric_mean_curvatures, cmap='viridis', s=1)
+        sc = ax_curvature_H.scatter(self.points[:, 0], self.points[:, 1], self.points[:, 2], c=self.H_quadric, cmap='viridis', s=1)
         fig_curvature_H.colorbar(sc, ax=ax_curvature_H)
         plt.tight_layout()
         ax_curvature_H.view_init(azim=90, elev=85)
         ax_curvature_H.set_axis_off()
         ax_curvature_H.set_title(f'Mean Curvature from quadric surface, K = {self.k_neighbors}, Voxel Size = {self.voxel_size}')
-        pickle.dump(fig_curvature_H, open(f'Mean Curvature from quadric surface, K = {self.k_neighbors}, Voxel Size = {self.voxel_size}.pickle', 'wb'))
+        pickle.dump(fig_curvature_H, open(f'{self.output_path}Mean Curvature from quadric surface, K = {self.k_neighbors}, Voxel Size = {self.voxel_size}.pickle', 'wb'))
 
         # plt.show()
 
-        # # Plot histograms
-        # fig_hist_K_fund = plt.figure()
-        # plt.hist(np.array(self.quadric_gaussian_curvatures, dtype=float), bins=100)
-        # plt.title(f'Hist Gaussian Curvature from quadric surface, K = {self.k_neighbors}, Voxel Size = {self.voxel_size}')
-        # plt.tight_layout()
-        # pickle.dump(fig_hist_K_fund, open(f'Hist Gaussian Curvature from quadric surface, K = {self.k_neighbors}, Voxel Size = {self.voxel_size}.pickle', 'wb'))
+        # Plot histograms
+        fig_hist_K_fund = plt.figure()
+        plt.hist(np.array(self.K_quadric, dtype=float), bins=100)
+        plt.title(f'Hist Gaussian Curvature from quadric surface, K = {self.k_neighbors}, Voxel Size = {self.voxel_size}')
+        plt.tight_layout()
+        pickle.dump(fig_hist_K_fund, open(f'{self.output_path}Hist Gaussian Curvature from quadric surface, K = {self.k_neighbors}, Voxel Size = {self.voxel_size}.pickle', 'wb'))
 
-        # fig_hist_H_fund = plt.figure()
-        # plt.hist(np.array(self.quadric_mean_curvatures, dtype=float), bins=100)
-        # plt.title(f'Hist Mean Curvature from quadric surface, K = {self.k_neighbors}, Voxel Size = {self.voxel_size}')
-        # plt.tight_layout()
-        # pickle.dump(fig_hist_H_fund, open(f'Hist Mean Curvature from quadric surface, K = {self.k_neighbors}, Voxel Size = {self.voxel_size}.pickle', 'wb'))
+        fig_hist_H_fund = plt.figure()
+        plt.hist(np.array(self.H_quadric, dtype=float), bins=100)
+        plt.title(f'Hist Mean Curvature from quadric surface, K = {self.k_neighbors}, Voxel Size = {self.voxel_size}')
+        plt.tight_layout()
+        pickle.dump(fig_hist_H_fund, open(f'{self.output_path}Hist Mean Curvature from quadric surface, K = {self.k_neighbors}, Voxel Size = {self.voxel_size}.pickle', 'wb'))
 
         # plt.show()
 
@@ -789,7 +590,7 @@ class PointCloud:
         ax_curvature_K.view_init(azim=90, elev=85)
         ax_curvature_K.set_axis_off()
         ax_curvature_K.set_title(f'Gaussian Curvature from quadratic surface, K = {self.k_neighbors}, Voxel Size = {self.voxel_size}')
-        pickle.dump(fig_curvature_K, open(f'Gaussian Curvature from quadratic surface, K = {self.k_neighbors}, Voxel Size = {self.voxel_size}.pickle', 'wb'))
+        pickle.dump(fig_curvature_K, open(f'{self.output_path}Gaussian Curvature from quadratic surface, K = {self.k_neighbors}, Voxel Size = {self.voxel_size}.pickle', 'wb'))
 
         # Mean Curvature from quadric surface
         fig_curvature_H = plt.figure()
@@ -800,7 +601,7 @@ class PointCloud:
         ax_curvature_H.view_init(azim=90, elev=85)
         ax_curvature_H.set_axis_off()
         ax_curvature_H.set_title(f'Mean Curvature from quadratic surface, K = {self.k_neighbors}, Voxel Size = {self.voxel_size}')
-        pickle.dump(fig_curvature_H, open(f'Mean Curvature from quadratic surface, K = {self.k_neighbors}, Voxel Size = {self.voxel_size}.pickle', 'wb'))
+        pickle.dump(fig_curvature_H, open(f'{self.output_path}Mean Curvature from quadratic surface, K = {self.k_neighbors}, Voxel Size = {self.voxel_size}.pickle', 'wb'))
 
         # plt.show()
 
@@ -809,143 +610,39 @@ class PointCloud:
         plt.hist(np.array(self.K_quadratic, dtype=float), bins=100)
         plt.title(f'Hist Gaussian Curvature from quadratic surface, K = {self.k_neighbors}, Voxel Size = {self.voxel_size}')
         plt.tight_layout()
-        pickle.dump(fig_hist_K_fund, open(f'Hist Gaussian Curvature from quadratic surface, K = {self.k_neighbors}, Voxel Size = {self.voxel_size}.pickle', 'wb'))
+        pickle.dump(fig_hist_K_fund, open(f'{self.output_path}Hist Gaussian Curvature from quadratic surface, K = {self.k_neighbors}, Voxel Size = {self.voxel_size}.pickle', 'wb'))
 
         fig_hist_H_fund = plt.figure()
         plt.hist(np.array(self.H_quadratic, dtype=float), bins=100)
         plt.title(f'Hist Mean Curvature from quadratic surface, K = {self.k_neighbors}, Voxel Size = {self.voxel_size}')
         plt.tight_layout()
-        pickle.dump(fig_hist_H_fund, open(f'Hist Mean Curvature from quadratic surface, K = {self.k_neighbors}, Voxel Size = {self.voxel_size}.pickle', 'wb'))
+        pickle.dump(fig_hist_H_fund, open(f'{self.output_path}Hist Mean Curvature from quadratic surface, K = {self.k_neighbors}, Voxel Size = {self.voxel_size}.pickle', 'wb'))
 
         # plot(self.points, c=np.array(self.K_quadratic), shading={"point_size": 10.0})
-        plot(self.points, c=np.array(self.H_quadratic), shading={"point_size": 10.0})
+        # plot(self.points, c=np.array(self.H_quadratic), shading={"point_size": 10.0})
         # mp.subplot(self.points, c=np.random.rand(*v.shape), s=[1, 2, 1], data=d, shading={"point_size": 0.03})
 
         # plt.show()
 
-    def calculate_quadric_curvatures(self):
-        self.quadric_gaussian_curvatures = [[] for i in range(len(self.points))]
-        self.quadric_mean_curvatures = [[] for i in range(len(self.points))]
-        self.principal_curvature_1 = [[] for i in range(len(self.points))]
-        self.principal_curvature_2 = [[] for i in range(len(self.points))]
-
-        #see R. Goldman / Computer Aided Geometric Design 22 (2005) 632–658 for formulas used
-        for i, point in enumerate(self.points):
-
-            A, B, C, D, E, F, G, H, I, J = self.quadric_coefficients[i]
-            surface = f = A*(self.x_quadric[i]**2) + B*(self.y_quadric[i]**2) + C*(self.z_quadric[i]**2) + D*(self.x_quadric[i]*self.y_quadric[i]) + E*(self.x_quadric[i]*self.z_quadric[i]) + F*(self.y_quadric[i]*self.z_quadric[i]) + G*(self.x_quadric[i]) + H*(self.y_quadric[i]) + I*(self.z_quadric[i]) + J
-
-            #calculate the partial derivatives of the surface Ax2+By2+Cz2+Dxy+Exz+Fyz+Gx+Hy+Jz+K=0.
-            fx = 2*A*self.x_quadric[i] + D*self.y_quadric[i] + E*self.z_quadric[i] + G
-            fy = 2*B*self.y_quadric[i] + D*self.x_quadric[i] + F*self.z_quadric[i] + H
-            fz = 2*C*self.z_quadric[i] + E*self.x_quadric[i] + F*self.y_quadric[i] + I
-            fxx = 2*A
-            fyy = 2*B
-            fzz = 2*C
-            fxy = D
-            fxz = E
-            fyz = F
-            fyx = D
-            fzx = E
-            fzy = F
-
-            g = gradient = np.array([fx, fy, fz])
-            h = hessian = np.array([[fxx, fxy, fxz], [fxy, fyy, fyz], [fzx, fzy, fzz]])
-            adjoint_of_hessian = adj_h = np.array([[fyy*fzz-fyz*fzy, fyz*fzx-fyx*fzz, fxy*fzy-fyy*fzx], [fxz*fzy-fyx*fzz, fxx*fzz-fxz*fzx, fxy*fzx-fxx*fzy], [fxy*fyz-fxz*fyy, fyx*fxz-fxx*fyz, fxx*fyy-fxy*fyx]])
-            mag_g = np.sqrt(g.dot(g))
-
-            # Gaussian Curvature
-            K_g = (np.dot((np.dot(g, adj_h),g)))/(mag_g**4)
-
-            # Mean Curvature
-            K_m = (np.dot(np.dot(g, adjoint_of_hessian), g.T))/(2*(mag_g)**4)
-            # K_m = K_m**2
-            # print(K_m)
-
-            # Principal Curvatures
-            k1 = K_m + np.sqrt(K_m**2 - K_g)
-            k2 = K_m - np.sqrt(K_m**2 - K_g)
-            # print(k1, k2)
-
-            # append to lists
-            self.quadric_gaussian_curvatures[i] = K_g
-            self.quadric_mean_curvatures[i] = K_m
-            self.principal_curvature_1[i] = k1
-            self.principal_curvature_2[i] = k2
-
-    def fit_quadric_surfaces(self):
-        # A is a matrix containing the terms corresponding to the coefficients of the quadric polynomial.
-        # x is a vector containing the coefficients [A, B, C, D, E, F, G, H, I, J].
-        # b is a vector containing the z-coordinates of the data points.
-        # Your 3D point cloud data
+    def fit_implicit_quadric_surfaces_all_points(self):
 
         self.quadric_coefficients = [[] for i in range(len(self.points))]
-        self.x_quadric = [[] for i in range(len(self.points))]
-        self.y_quadric = [[] for i in range(len(self.points))]
-        self.z_quadric = [[] for i in range(len(self.points))]
-        self.xx_quadric = [[] for i in range(len(self.points))]
-        self.yy_quadric = [[] for i in range(len(self.points))]
-        self.zz_quadric = [[] for i in range(len(self.points))]
-
 
         for i, point in enumerate(self.points):
             
-            #grid
-            min_x, max_x = point[0]-5*self.voxel_size, point[0]+5*self.voxel_size
-            min_y, max_y = point[1]-5*self.voxel_size, point[1]+5*self.voxel_size
-            min_z, max_z = point[2]-5*self.voxel_size, point[2]+5*self.voxel_size
-            X,Y,Z = np.meshgrid(np.arange(min_x, max_x, 0.5)), np.meshgrid(np.arange(min_y, max_y, 0.5)), np.meshgrid(np.arange(min_z, max_z, 0.5))
-            # points = self.points[self.neighbor_indices[i]]
-            error = 0.0
-            # if 'k' in locals():
-            #     print(k)
-            # print("successful fit")
-
             k = self.k_neighbors
-            # char_dim = (max(self.points[:,0]-min(self.points[:,0]))/10)
-            # while error < 0.00001 and k < char_dim:
-
+            
             dists, neighbor_indicies = self.kdtree.query(point, k)
             neighbors = self.points[neighbor_indicies]
 
             # center the points to the origin
             neighbors = neighbors - point
 
-            #points
-            # x = np.array(neighbors[:, 0])  # x coordinates
-            # y = np.array(neighbors[:, 1])  # y coordinates
-            # z = np.array(neighbors[:, 2])  # z coordinates
+            points = neighbors
+            coefficients = self.fit_implicit_quadric_surface(points)
+            self.quadric_coefficients[i] = coefficients
 
-
-            def quadric_surface(params, points):
-                A, B, C, D, E, F, G, H, I, J = params
-                x, y, z = points.T
-                return A * x ** 2 + B * y ** 2 + C * z ** 2 + D * x * y + E * x * z + F * y * z + G * x + H * y + I * z + J
-
-            def error(params, points):
-                return quadric_surface(params, points)
-
-            initial_params = np.ones(10)  # Initial guess for coefficients
-
-            result = least_squares(error, initial_params, args=(neighbors,))
-            optimized_params = result.x
-
-            def quadric_surface_function(x, y, z):
-                A, B, C, D, E, F, G, H, I, J = optimized_params
-                return A * x ** 2 + B * y ** 2 + C * z ** 2 + D * x * y + E * x * z + F * y * z + G * x + H * y + I * z + J
-
-            error = np.sum(abs(error(optimized_params, neighbors)))
-            # print(error)
-
-            # k = k+1
-        
-            self.quadric_coefficients[i] = optimized_params
-
-            self.x_quadric[i] = 0
-            self.y_quadric[i] = 0
-            self.z_quadric[i] = 0
-
-    def fit_quadratic_surfaces_to_neighborhoods(self):
+    def fit_explicit_quadratic_surfaces_to_neighborhoods(self):
     
         self.quadratic_coefficients = [[] for i in range(len(self.points))]
         for i, point in enumerate(self.points):
@@ -954,88 +651,99 @@ class PointCloud:
             centered_points = points - point
 
             # Find the best-fit plane using SVD
-            normal = self.best_fit_plane(centered_points)
-
-            # Compute the rotation matrix to align the normal of the plane with the z-axis
-            rotation_matrix = self.rotation_matrix_to_align_vector_with_z_axis(normal)
-
-            # Rotate the points accordingly
-            rotated_points = np.dot(centered_points, rotation_matrix.T)
+            points = self.get_best_fit_plane_and_rotate(centered_points)
 
             # Fit a quadratic surface to the rotated points
-            a, b, c, d, e, f = self.fit_quadratic_surface(rotated_points)
+            self.quadratic_coefficients[i] = self.fit_quadratic_surface(points)
 
-            self.quadratic_coefficients[i] = [a, b, c, d, e, f]
+    def calculate_curvatures_of_explicit_quadratic_surfaces_for_all_points(self):
 
-    # Function to find the best-fit plane using SVD
-    @staticmethod
-    def best_fit_plane(points):
+        self.K_quadratic = []
+        self.H_quadratic = []
 
-        centroid = np.mean(points, axis=0)
+        for i, point in enumerate(self.points):
 
-        centered_points = points - centroid
-        # centered_points = points
+            normal = self.normals[i]
+            coefs = self.quadratic_coefficients[i]
 
-        Cov = np.cov(centered_points, rowvar=False)
+            K_g, K_h, k1, k2 = self.calculate_explicit_quadratic_curvatures(coefs)
 
-        U, S, Vt = svd(Cov, full_matrices=True)
+            self.K_quadratic.append(K_g)
+            self.H_quadratic.append(K_h)
 
-        normal = Vt[-1]
-        return normal
+    def calculate_curvatures_of_implicit_quadric_surfaces_for_all_points(self):
 
-    # Function to compute the rotation matrix to align a vector with the z-axis
-    @staticmethod
-    def rotation_matrix_to_align_vector_with_z_axis(vector):
-        vec1 = vector
-        vec2 = np.array([0, 0, 1])
-        a, b = (vec1 / np.linalg.norm(vec1)).reshape(3), (vec2 / np.linalg.norm(vec2)).reshape(3)
-        v = np.cross(a, b)
-        c = np.dot(a, b)
-        s = np.linalg.norm(v)
-        kmat = np.array([[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]])
-        rotation_matrix = np.eye(3) + kmat + kmat.dot(kmat) * ((1 - c) / (s ** 2))
-        return rotation_matrix
+        self.K_quadric = []
+        self.H_quadric = []
 
-    # Function to plot 3D points
-    @staticmethod
-    def plot_3d_points(points, title, ax):
-        ax.scatter(points[:, 0], points[:, 1], points[:, 2])
-        ax.set_title(title)
-        ax.set_xlabel('X')
-        ax.set_ylabel('Y')
-        ax.set_zlabel('Z')
+        for i, point in enumerate(self.points):
 
-    # Function to fit a quadratic surface to a collection of points
-    @staticmethod
-    def fit_quadratic_surface(points):
-        # Extract x and y coordinates
-        x = points[:, 0]
-        y = points[:, 1]
-        # Combine x and y into a single array
-        xy = np.column_stack((x, y))
-        
-        # Generate polynomial features (up to degree 2)
-        poly_features = PolynomialFeatures(degree=2, include_bias=False)
-        xy_poly = poly_features.fit_transform(xy)
-        
-        # Extract z coordinates
-        z = points[:, 2]
-        
-        # Fit a linear regression model
-        model = LinearRegression()
-        model.fit(xy_poly, z)
-        
-        # Coefficients correspond to [x^2, y^2, xy, x, y] and intercept to f
-        a, b, c, d, e = model.coef_
-        f = model.intercept_
-        
-        return a, b, c, d, e, f
+            normal = self.normals[i]
+            coefs = self.quadric_coefficients[i]
 
-    def reject_outliers_curvature(self):
-        self.K_from_components_of_fundamental_forms = self.filter_outliers_median(self.K_from_components_of_fundamental_forms)
-        self.H_from_components_of_fundamental_forms = self.filter_outliers_median(self.H_from_components_of_fundamental_forms)
+            K_g, K_h, k1, k2 = self.calculate_implicit_quadric_curvatures(coefs)
 
-    def quadratic_neighbor_study(self):
+            self.K_quadric.append(K_g)
+            self.H_quadric.append(K_h)
+
+    def explicit_quadratic_neighbor_study(self, method):
+        points = self.points
+        # normals = self.normals
+        random_indexes = self.random_indexes
+        random_points = self.random_points
+
+        test_results = {}
+
+        for i, point in enumerate(random_points):
+            test_results[point[0]] = {}
+            test_results[point[0]]['gaussian'] = []
+            test_results[point[0]]['mean'] = []
+            test_results[point[0]]['principal_1'] = []
+            test_results[point[0]]['principal_2'] = []
+            test_results[point[0]]['neighbors'] = []
+
+            error_points = 0
+            for num_neighbors in range(2, 100):
+                neighbor_inds = self.kdtree.query(point, num_neighbors+1)[1]
+                points = self.points[neighbor_inds]
+                centered_points = points - point
+
+                points = self.get_best_fit_plane_and_rotate(centered_points)
+                try:
+                    coefs = self.fit_quadratic_surface(points)
+                except:
+                    error_points+=1
+                    ceofs = 0, 0, 0, 0, 0, 0
+                
+                normal = self.normals[i]
+                K_g, K_h, k1, k2 = self.calculate_explicit_quadratic_curvatures(coefs)
+
+                test_results[point[0]]['neighbors'].append(num_neighbors)
+                test_results[point[0]]['gaussian'].append(K_g)
+                test_results[point[0]]['mean'].append(K_h)
+                test_results[point[0]]['principal_1'].append(k1)
+                test_results[point[0]]['principal_2'].append(k2)
+            print(f'error point in neighbor hunt only')
+            #plot test results
+            figy = plt.figure()
+            axx = figy.add_subplot(1, 1, 1)
+            axx.set_title(f'Neighbor Test, Voxel Size = {self.voxel_size}, pcl has total of {len(self.points[:,0])} points')
+            axx.set_xlabel('num neighbors')
+            axx.set_ylabel('Gaussian Curvature (quadratic fit)')
+            axx.scatter(test_results[point[0]]['neighbors'],test_results[point[0]]['gaussian'], c='b', s=2)
+            
+            pickle.dump(figy, open(f'{self.output_path}Gaussian Curvature {i} study, Voxel Size = {self.voxel_size}.pickle', 'wb'))
+
+            figz = plt.figure()
+            axxa = figz.add_subplot(1, 1, 1)
+            axxa.set_title(f'Neighbor Test, Voxel Size = {self.voxel_size}, pcl has total of {len(self.points[:,0])} points')
+            axxa.set_xlabel('num neighbors')
+            axxa.set_ylabel('Mean Curvature (quadratic fit)')
+            axxa.scatter(test_results[point[0]]['neighbors'],test_results[point[0]]['mean'], c='b', s=2)
+            
+            pickle.dump(figz, open(f'{self.output_path}Mean Curvature study, Voxel Size = {self.voxel_size} {i}.pickle', 'wb'))
+
+    def implicit_quadric_neighbor_study(self):
         points = self.points
         # normals = self.normals
         random_indexes = self.random_indexes
@@ -1052,49 +760,18 @@ class PointCloud:
             test_results[point[0]]['neighbors'] = []
 
             for num_neighbors in range(2, 100):
-                points = self.points[self.neighbor_indices[i]]
+                neighbor_inds = self.kdtree.query(point, num_neighbors+1)[1]
+                points = self.points[neighbor_inds]
                 centered_points = points - point
 
-                # Find the best-fit plane using SVD
-                normal = self.best_fit_plane(centered_points)
-
-                # Compute the rotation matrix to align the normal of the plane with the z-axis
-                rotation_matrix = self.rotation_matrix_to_align_vector_with_z_axis(normal)
-
-                # Rotate the points accordingly
-                rotated_points = np.dot(centered_points, rotation_matrix.T)
-
-                a, b, c, d, e, f = self.fit_quadratic_surface(rotated_points)
-
-                xf = 0
-                yf = 0
-
-                # define symbolic equation
-                func = a*(xf**2) + b*(yf**2) + c*(xf*yf) + d*(xf) + e*(yf) + f
-
-                # derivatives
-                fx = 2*a*xf + c*yf + d
-                fxx = 2*a
-                fy = 2*b*yf + c*xf + e
-                fyy = 2*b
-                fxy = c
-                fyx = c
-
-                grad_f = np.array([fx, fy])
-                mag_grad_f = np.sqrt(fx**2 + fy**2)
-                hess_f = np.array([[fxx, fxy], [fyx, fyy]])
-                hess_det = fxx*fyy - fxy*fyx
-                print(hess_det)
-                # hess_cofactors = np.array([[0, 0, 0], [0, 0, 0], [0, 0, hess_det]])
-                hess_trace = np.trace(hess_f)
-
-                # Curvatures
-                K_g = hess_det/(((mag_grad_f**2)+1)**2)
-                K_h = (np.inner(np.inner(grad_f, hess_f), grad_f.T) - ((mag_grad_f**2)+1)*hess_trace)/(2*((mag_grad_f**2)+1)**(3/2))
+                points = self.get_best_fit_plane_and_rotate(centered_points)
+                try:
+                    coefs = self.fit_implicit_quadric_surface(points)
+                except:
+                    error_points+=1
+                    ceofs = 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
                 
-                # Principal Curvatures
-                k1 = K_h + np.sqrt(K_h**2 - K_g)
-                k2 = K_h - np.sqrt(K_h**2 - K_g)
+                K_g, K_h, k1, k2 = self.calculate_implicit_quadric_curvatures(coefs)
 
                 test_results[point[0]]['neighbors'].append(num_neighbors)
                 test_results[point[0]]['gaussian'].append(K_g)
@@ -1108,259 +785,19 @@ class PointCloud:
             axx = figy.add_subplot(1, 1, 1)
             axx.set_title(f'Neighbor Test, Voxel Size = {self.voxel_size}, pcl has total of {len(self.points[:,0])} points')
             axx.set_xlabel('num neighbors')
-            axx.set_ylabel('Gaussian Curvature (quadratic fit)')
+            axx.set_ylabel('Gaussian Curvature (quadic fit)')
             axx.scatter(test_results[point[0]]['neighbors'],test_results[point[0]]['gaussian'], c='b', s=2)
             
-            pickle.dump(figy, open(f'Gaussian Curvature {i} study, Voxel Size = {self.voxel_size}.pickle', 'wb'))
+            pickle.dump(figy, open(f'{self.output_path}Gaussian Curvature {i} study, Voxel Size = {self.voxel_size}.pickle', 'wb'))
 
             figz = plt.figure()
             axxa = figz.add_subplot(1, 1, 1)
             axxa.set_title(f'Neighbor Test, Voxel Size = {self.voxel_size}, pcl has total of {len(self.points[:,0])} points')
             axxa.set_xlabel('num neighbors')
-            axxa.set_ylabel('Mean Curvature (quadratic fit)')
+            axxa.set_ylabel('Mean Curvature (quadric fit)')
             axxa.scatter(test_results[point[0]]['neighbors'],test_results[point[0]]['mean'], c='b', s=2)
             
-            pickle.dump(figz, open(f'Mean Curvature study, Voxel Size = {self.voxel_size} {i}.pickle', 'wb'))
-
-    def calculate_quadratic_curvatures(self):
-        self.K_quadratic = []
-        self.H_quadratic = []
-
-        for i, point in enumerate(self.points):
-
-            normal = self.normals[i]
-            x = 0
-            y = 0
-
-            a, b, c, d, e, f = self.quadratic_coefficients[i]
-
-            # define symbolic equation
-            func = a*(x**2) + b*(y**2) + c*(x*y) + d*(x) + e*(y) + f
-
-            # derivatives
-            fx = 2*a*x + c*y + d
-            fxx = 2*a
-            fy = 2*b*y + c*x + e
-            fyy = 2*b
-            fxy = c
-
-
-            grad_f = np.array([fx, fy, 0])
-            mag_grad_f = np.sqrt(grad_f.dot(grad_f))
-            hess_f = np.array([[fxx, fxy, 0], [fxy, fyy, 0], [0, 0, 0]])
-            hess_det = np.linalg.det(hess_f)
-            hess_cofactors = np.array([[0, 0, 0], [0, 0, 0], [0, 0, hess_det]])
-            hess_trace = np.trace(hess_f)
-
-            K_g = hess_det/((mag_grad_f**2)+1)**2
-            K_h = (np.inner(np.inner(grad_f, hess_f), grad_f.T) - ((mag_grad_f**2)+1)*hess_trace)/(2*((mag_grad_f**2)+1)**(3/2))
-
-            self.K_quadratic.append(K_g)
-            self.H_quadratic.append(K_h)
-
-    def calculate_parametric_curvatures_direct(self):
-        self.K_from_components_of_fundamental_forms = []
-        self.H_from_components_of_fundamental_forms = []
-
-        for i, point in enumerate(self.points):
-
-            normal = self.normals[i]
-            x = point[0]
-            y = point[1]
-
-            a, b, c, d, e, f = self.C[i]
-
-            # define symbolic equation
-            h = a*(x**2) + b*(y**2) + c*(x*y) + d*(x) + e*(y) + f
-
-            # derivatives
-            hx = 2*a*x + c*y + d
-            hxx = 2*a
-            hy = 2*b*y + c*x + e
-            hyy = 2*b
-            hxy = c
-
-            # first fundamental form
-            E = hx**2
-            F = hx*hy
-            G = hy**2
-            # print(f'E: {E}, F: {F}, G: {G}')
-
-            # second fundamental form
-            L = np.dot(hxx,normal[0])
-            M = np.dot(hxy,normal[1])
-            N = np.dot(hyy,normal[2])
-            # print(f'L: {L}, M: {M}, N: {N}')
-
-            # print(f'L: {L}, M: {M}, N: {N}')
-            if (E*G-F**2) == 0 or (2*(E*G-F**2)) == 0:
-                K_from_components_of_fundamental_forms = 0
-                H_from_components_of_fundamental_forms = 0
-            else:
-                K_from_components_of_fundamental_forms = (L*N-M**2)/(E*G-F**2)
-                H_from_components_of_fundamental_forms = (E*N-2*F*M+G*L)/(2*(E*G-F**2))
-
-            self.K_from_components_of_fundamental_forms.append(K_from_components_of_fundamental_forms)
-            self.H_from_components_of_fundamental_forms.append(H_from_components_of_fundamental_forms)
-
-            # self.K_from_components_of_fundamental_forms = self.filter_outliers_median(self.K_from_components_of_fundamental_forms)
-            # self.H_from_components_of_fundamental_forms = self.filter_outliers_median(self.H_from_components_of_fundamental_forms)
-
-    def calculate_parametric_curvatures_symbolic(self):
-        self.K_from_components_of_fundamental_forms = []
-        self.H_from_components_of_fundamental_forms = []
-
-        for i, point in enumerate(self.points):
-            normal = self.normals[i]
-
-            a, b, c, d, e, f = self.C[i]
-
-            # define symbolic variables
-            x = sympy.symbols('x', real=True)
-            y = sympy.symbols('y', real=True)
-
-            # define symbolic equation
-            h = a*(x**2) + b*(y**2) + c*(x*y) + d*(x) + e*(y) + f
-
-            # derivatives
-            hx = h.diff(x)
-            hxx = hx.diff(x)
-            hy = h.diff(y)
-            hyy = hy.diff(y)
-            hxy = hx.diff(y)
-
-            # first fundamental form
-            E = np.dot(hx,hx)
-            F = np.dot(hx,hy)
-            G = np.dot(hy,hy)
-            # print(f'E: {E}, F: {F}, G: {G}')
-
-            # second fundamental form
-            L = np.dot(hxx,normal[0])
-            M = np.dot(hxy,normal[1])
-            N = np.dot(hyy,normal[2])
-            # print(f'L: {L}, M: {M}, N: {N}')
-
-            E = (E.subs(x, point[0]).subs(y, point[1]))
-            F = (F.subs(x, point[0]).subs(y, point[1]))
-            G = (G.subs(x, point[0]).subs(y, point[1]))
-            # print(f'E: {E}, F: {F}, G: {G}')
-
-            L = (L.subs(x, point[0]).subs(y, point[1]))
-            M = (M.subs(x, point[0]).subs(y, point[1]))
-            N = (N.subs(x, point[0]).subs(y, point[1]))
-
-            # print(f'L: {L}, M: {M}, N: {N}')
-            if (E*G-F**2) == 0 or (2*(E*G-F**2)) == 0:
-                K_from_components_of_fundamental_forms = 0
-                H_from_components_of_fundamental_forms = 0
-            else:
-                K_from_components_of_fundamental_forms = (L*N-M**2)/(E*G-F**2)
-                H_from_components_of_fundamental_forms = (E*N-2*F*M+G*L)/(2*(E*G-F**2))
-
-            # A = np.dot(np.linalg.inv(FFF), SFF)
-            # print(A)
-            # k1, k2 = np.linalg.eigvals(A)
-
-            # K_from_eigenvalues_of_invFFF_dot_SFF = k1*k2
-            # H_from_eigenvalues_of_invFFF_dot_SFF = (k1+k2)/2
-            
-            self.K_from_components_of_fundamental_forms.append(K_from_components_of_fundamental_forms)
-            self.H_from_components_of_fundamental_forms.append(H_from_components_of_fundamental_forms)
-
-            # self.K_from_components_of_fundamental_forms = self.filter_outliers_median(self.K_from_components_of_fundamental_forms)
-            # self.H_from_components_of_fundamental_forms = self.filter_outliers_median(self.H_from_components_of_fundamental_forms)
-
-    def pickle_figure(self, fig, k, v):
-        pickle.dump(fig, open(f'{k}_neighbors_and_{v}_voxel_size.pickle', 'wb'))
-
-    def plot_parametric_curvatures(self):
-        n = 1
-
-        # Gaussian Curvature from fundamental form coefficients
-        fig_curvature_K = plt.figure()
-        ax_curvature_K = fig_curvature_K.add_subplot(111, projection='3d')
-        ax_curvature_K.set_title('Gaussian Curvature from fundamental form coefficients')
-        sc = ax_curvature_K.scatter(self.points[n-1:, 0], self.points[n-1:, 1], self.points[n-1:, 2], c=self.K_from_components_of_fundamental_forms, cmap='viridis', s=1)
-        fig_curvature_K.colorbar(sc, ax=ax_curvature_K)
-        plt.tight_layout()
-        ax_curvature_K.view_init(azim=90, elev=85)
-        ax_curvature_K.set_axis_off()
-        ax_curvature_K.set_title(f'Gaussian Curvature from fundamental form coefficients, K = {self.k_neighbors}, Voxel Size = {self.voxel_size}')
-        pickle.dump(fig_curvature_K, open(f'pcl_gaussian_curvature_from_fundamental_form coefficients_k_{self.k_neighbors}_voxel_size_{self.voxel_size}.pickle', 'wb'))
-
-        # Mean Curvature from fundamental form coefficients
-        fig_curvature_H = plt.figure()
-        ax_curvature_H = fig_curvature_H.add_subplot(111, projection='3d')
-        ax_curvature_H.set_title('Mean Curvature from fundamental form coefficients')
-        sc = ax_curvature_H.scatter(self.points[n-1:, 0], self.points[n-1:, 1], self.points[n-1:, 2], c=self.H_from_components_of_fundamental_forms, cmap='viridis', s=1)
-        fig_curvature_H.colorbar(sc, ax=ax_curvature_H)
-        plt.tight_layout()
-        ax_curvature_H.view_init(azim=90, elev=85)
-        ax_curvature_H.set_axis_off()
-        ax_curvature_H.set_title(f'Mean Curvature from fundamental form coefficients, K = {self.k_neighbors}, Voxel Size = {self.voxel_size}')
-        pickle.dump(fig_curvature_H, open(f'pcl_mean_curvature_from_fundamental_form_coefficients_k_{self.k_neighbors}_voxel_size_{self.voxel_size}.pickle', 'wb'))
-
-        # plt.show()
-
-        # Plot histograms
-        fig_hist_K_fund = plt.figure()
-        plt.hist(np.array(self.K_from_components_of_fundamental_forms, dtype=float), bins=100)
-        plt.title(f'Gaussian Curvature from fundamental form coefficients k={self.k_neighbors} voxel size={self.voxel_size}')
-        plt.tight_layout()
-        pickle.dump(fig_hist_K_fund, open(f'histogram_gaussian_curvature_k_{self.k_neighbors}_voxel_size_{self.voxel_size}.pickle', 'wb'))
-
-        fig_hist_H_fund = plt.figure()
-        plt.hist(np.array(self.H_from_components_of_fundamental_forms, dtype=float), bins=100)
-        plt.title(f'Mean Curvature from fundamental form coefficients k={self.k_neighbors} voxel size={self.voxel_size}')
-        plt.tight_layout()
-        pickle.dump(fig_hist_H_fund, open(f'histogram_mean_curvature_k_{self.k_neighbors}_voxel_size_{self.voxel_size}.pickle', 'wb'))
-
-        # plt.show()
-
-    def plot_pseudo_parametric_curvatures(self):
-        n = 1
-
-        # Gaussian Curvature from fundamental form coefficients
-        fig_curvature_K = plt.figure()
-        ax_curvature_K = fig_curvature_K.add_subplot(111, projection='3d')
-        ax_curvature_K.set_title('Pseudo Gaussian Curvature from fundamental form coefficients')
-        sc = ax_curvature_K.scatter(self.points[n-1:, 0], self.points[n-1:, 1], self.points[n-1:, 2], c=self.K_pseudo, cmap='viridis', s=1)
-        fig_curvature_K.colorbar(sc, ax=ax_curvature_K)
-        plt.tight_layout()
-        ax_curvature_K.view_init(azim=90, elev=85)
-        ax_curvature_K.set_axis_off()
-        ax_curvature_K.set_title(f'Pseudo Gaussian Curvature from fundamental form coefficients, K = {self.k_neighbors}, Voxel Size = {self.voxel_size}')
-        pickle.dump(fig_curvature_K, open(f'pcl_pseudo_gaussian_curvature_from_fundamental_form coefficients_k_{self.k_neighbors}_voxel_size_{self.voxel_size}.pickle', 'wb'))
-
-        # Mean Curvature from fundamental form coefficients
-        fig_curvature_H = plt.figure()
-        ax_curvature_H = fig_curvature_H.add_subplot(111, projection='3d')
-        ax_curvature_H.set_title('Pseudo Mean Curvature')
-        sc = ax_curvature_H.scatter(self.points[n-1:, 0], self.points[n-1:, 1], self.points[n-1:, 2], c=self.H_pseudo, cmap='viridis', s=1)
-        fig_curvature_H.colorbar(sc, ax=ax_curvature_H)
-        plt.tight_layout()
-        ax_curvature_H.view_init(azim=90, elev=85)
-        ax_curvature_H.set_axis_off()
-        ax_curvature_H.set_title(f'Pseudo Mean Curvature, K = {self.k_neighbors}, Voxel Size = {self.voxel_size}')
-        pickle.dump(fig_curvature_H, open(f'pcl_pseudo_mean_curvature_k_{self.k_neighbors}_voxel_size_{self.voxel_size}.pickle', 'wb'))
-
-        # plt.show()
-
-        # Plot histograms
-        fig_hist_K_fund = plt.figure()
-        plt.hist(np.array(self.K_pseudo, dtype=float), bins=100)
-        plt.title(f'Pseudo Gaussian Curvature k={self.k_neighbors} voxel size={self.voxel_size}')
-        plt.tight_layout()
-        pickle.dump(fig_hist_K_fund, open(f'histogram_pseudo_gaussian_curvature_k_{self.k_neighbors}_voxel_size_{self.voxel_size}.pickle', 'wb'))
-
-        fig_hist_H_fund = plt.figure()
-        plt.hist(np.array(self.H_pseudo, dtype=float), bins=100)
-        plt.title(f'Pseudo Mean Curvature k={self.k_neighbors} voxel size={self.voxel_size}')
-        plt.tight_layout()
-        pickle.dump(fig_hist_H_fund, open(f'histogram_pseudo_mean_curvature_k_{self.k_neighbors}_voxel_size_{self.voxel_size}.pickle', 'wb'))
-
-        # plt.show()
+            pickle.dump(figz, open(f'{self.output_path}Mean Curvature study, Voxel Size = {self.voxel_size} {i}.pickle', 'wb'))
 
     def principal_curvatures_via_principal_component_analysis(self, k_neighbors):
         num_points = len(self.points)
@@ -1422,7 +859,7 @@ class PointCloud:
         plt.tight_layout()
         ax3.view_init(azim=90, elev=85)
         ax3.set_axis_off()
-        pickle.dump(figg, open(f'principal_curvature_1_from_PCA_k_{self.k_neighbors}_voxel_size_{self.voxel_size}.pickle', 'wb'))
+        pickle.dump(figg, open(f'{self.output_path}principal_curvature_1_from_PCA_k_{self.k_neighbors}_voxel_size_{self.voxel_size}.pickle', 'wb'))
 
         fig7 = plt.figure()
         ax7 = fig7.add_subplot(111, projection='3d')
@@ -1432,7 +869,7 @@ class PointCloud:
         ax3.view_init(azim=90, elev=85)
         plt.tight_layout()
         ax7.set_axis_off()
-        pickle.dump(fig7, open(f'principal_curvature_2_from_PCA_k_{self.k_neighbors}_voxel_size_{self.voxel_size}.pickle', 'wb'))
+        pickle.dump(fig7, open(f'{self.output_path}principal_curvature_2_from_PCA_k_{self.k_neighbors}_voxel_size_{self.voxel_size}.pickle', 'wb'))
 
         # plt.show()
 
@@ -1442,7 +879,7 @@ class PointCloud:
         ax5.quiver(self.points[:, 0], self.points[:, 1], self.points[:, 2], self.principal_curvature_directions[:, 0, 0], self.principal_curvature_directions[:, 1, 0], np.zeros_like(self.points[:, 2]), length=1, normalize=True, color='g')
         ax5.set_axis_off()
         plt.title(f'Principal curvature directions (eigenvectors of covariance matrix) from PCA k={self.k_neighbors} voxel size={self.voxel_size}')
-        pickle.dump(fig2, open(f'principal_curvature_vectors_from_PCA_k_{self.k_neighbors}_voxel_size_{self.voxel_size}.pickle', 'wb'))
+        pickle.dump(fig2, open(f'{self.output_path}principal_curvature_vectors_from_PCA_k_{self.k_neighbors}_voxel_size_{self.voxel_size}.pickle', 'wb'))
 
         # plt.show()  
 
@@ -1455,7 +892,7 @@ class PointCloud:
         ax4.set_axis_off()
         # fig4.colorbar(g, ax=self.pca_K_values)
         plt.title(f'Gaussian curvature from PCA k={self.k_neighbors} voxel size={self.voxel_size}')
-        pickle.dump(fig4, open(f'pcl_gaussian_curvature_from_PCA_k_{self.k_neighbors}_voxel_size_{self.voxel_size}.pickle', 'wb'))
+        pickle.dump(fig4, open(f'{self.output_path}pcl_gaussian_curvature_from_PCA_k_{self.k_neighbors}_voxel_size_{self.voxel_size}.pickle', 'wb'))
 
         
 
@@ -1467,7 +904,7 @@ class PointCloud:
         ax0.view_init(90, 85)
         ax0.set_axis_off()
         plt.title(f'Mean curvature from PCA k={self.k_neighbors} voxel size={self.voxel_size}')
-        pickle.dump(fig0, open(f'mean_curvature_from_PCA_k_{self.k_neighbors}_voxel_size_{self.voxel_size}.pickle', 'wb'))
+        pickle.dump(fig0, open(f'{self.output_path}mean_curvature_from_PCA_k_{self.k_neighbors}_voxel_size_{self.voxel_size}.pickle', 'wb'))
 
         # plt.show()
 

@@ -13,7 +13,8 @@ def get_best_fit_plane(points):
 
     centroid = np.mean(points, axis=0)
 
-    centered_points = points - centroid
+    # centered_points = points - centroid
+    centered_points = points
 
     Cov = np.cov(centered_points, rowvar=False)
 
@@ -98,7 +99,7 @@ min_x = -1
 max_x = 1
 min_y = -1
 max_y = 1
-num_points = 100
+num_points = 20
 # Create a grid of x and y values
 xx, yy = np.meshgrid(range(min_x, max_x), range(min_y, max_y))
 
