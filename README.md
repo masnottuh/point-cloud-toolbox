@@ -1,6 +1,6 @@
 # point-cloud-toolbox
 
-![alt text](https://github.com/masnottuh/point-cloud-toolbox/img/torus.png)
+![alt text](https://github.com/masnottuh/point-cloud-toolbox/blob/main/img/torus.png)
 
 Python library for point cloud processing. The main emphasis is on discrete curvature measures, for now. 
 The utilities live within the PointCloud class in pointCloudToolbox.py
