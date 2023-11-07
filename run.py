@@ -12,7 +12,7 @@ from pointCloudToolbox import *
 num_visualization_demo_points = 5
 neighbors_for_surface_fit = [10, 15, 25, 30, 35, 40, 45, 50] #minimum of 4!
 voxel_sizes = [0] #set to zero if you don't need to downsample
-cloud_types = ['bunny'] #sridge, sphere, torus, klein, dupin, monkey, bumpy_spheroid, mobius, bunny
+cloud_types = ['sphere'] #sridge, sphere, torus, klein, dupin, monkey, bumpy_spheroid, mobius, bunny
 surface_fitting_method = 'explicit' #implicit or explicit
 ########################################################################
 
