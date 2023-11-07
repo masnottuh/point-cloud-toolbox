@@ -18,6 +18,9 @@ import random
 from mayavi import mlab
 from sympy.plotting import plot3d_parametric_surface
 from scipy.linalg import svd
+import meshplot as mp
+from meshplot import plot, subplot, interact
+mp.offline()
 
 
 class PointCloud:
@@ -118,7 +121,7 @@ class PointCloud:
         
         return data.tolist()
     
-    def filter_outliers_by_std_dev(self, num_std_devs=7):
+    def filter_outliers_by_std_dev(self, num_std_devs):
         n = num_std_devs
 
         data = np.array(self.K_quadratic)
@@ -131,7 +134,7 @@ class PointCloud:
         filtered_data = np.copy(data)  # Make a copy to avoid modifying the original array
         outliers = (data < lower_limit) | (data > upper_limit)
         filtered_data[outliers] = np.nan  # Replace outliers with np.nan
-        self.K_quadratic = filtered_data.tolist()
+        self.K_quadratic = np.array(filtered_data.tolist())
 
         data = np.array(self.H_quadratic)
         mean = np.mean(data)
@@ -143,7 +146,7 @@ class PointCloud:
         filtered_data = np.copy(data)  # Make a copy to avoid modifying the original array
         outliers = (data < lower_limit) | (data > upper_limit)
         filtered_data[outliers] = np.nan  # Replace outliers with np.nan
-        self.H_quadratic = filtered_data.tolist()
+        self.H_quadratic = np.array(filtered_data.tolist())
 
     def remove_noise_from_point_cloud(self, k, alpha):
         
@@ -640,7 +643,6 @@ class PointCloud:
             test_results[point[0]] = {}
             test_results[point[0]]['gaussian'] = []
             test_results[point[0]]['mean'] = []
-            test_results[point[0]]['mean squared'] = []
             test_results[point[0]]['principal_1'] = []
             test_results[point[0]]['principal_2'] = []
             test_results[point[0]]['neighbors'] = []
@@ -687,25 +689,27 @@ class PointCloud:
                 fzy = F
 
                 g = gradient = np.array([fx, fy, fz])
-                h = hessian = np.array([[fxx, fxy, 0], [fxy, fyy, 0], [0, 0, fzz]])
+                h = hessian = np.array([[fxx, fxy, fxz], [fxy, fyy, fyz], [fzx, fzy, fzz]])
                 adjoint_of_hessian = adj_h = np.array([[fyy*fzz-fyz*fzy, fyz*fzx-fyx*fzz, fxy*fzy-fyy*fzx], [fxz*fzy-fyx*fzz, fxx*fzz-fxz*fzx, fxy*fzx-fxx*fzy], [fxy*fyz-fxz*fyy, fyx*fxz-fxx*fyz, fxx*fyy-fxy*fyx]])
+                mag_g = np.sqrt(g.dot(g))
 
                 # Gaussian Curvature
-                K_g = (np.inner(np.inner(g,adj_h),g.T))/(np.linalg.norm(g)**4)
+                K_g = (np.dot(np.dot(g, adj_h),g))/(mag_g**4)
 
                 # Mean Curvature
-                K_m = (np.inner(np.inner(g,h),g.T)-np.linalg.norm(g)**2*np.trace(h))/(2*np.linalg.norm(g)**3)
-                K_m_squared = K_m**2
+                K_m = (np.dot(np.dot(g, adjoint_of_hessian), g.T))/(2*(mag_g)**4)
+                # K_m = K_m**2
+                # print(K_m)
 
                 # Principal Curvatures
                 k1 = K_m + np.sqrt(K_m**2 - K_g)
                 k2 = K_m - np.sqrt(K_m**2 - K_g)
-
+                # print(k1, k2)
 
                 test_results[point[0]]['neighbors'].append(num_neighbors)
                 test_results[point[0]]['gaussian'].append(K_g)
                 test_results[point[0]]['mean'].append(K_m)
-                test_results[point[0]]['mean squared'].append(K_m_squared)
+                # test_results[point[0]]['mean squared'].append(K_m_squared)
                 test_results[point[0]]['principal_1'].append(k1)
                 test_results[point[0]]['principal_2'].append(k2)
 
@@ -724,10 +728,10 @@ class PointCloud:
             axxa = figz.add_subplot(1, 1, 1)
             axxa.set_title(f'Neighbor Test, Voxel Size = {self.voxel_size}')
             axxa.set_xlabel('num neighbors')
-            axxa.set_ylabel('Mean Curvature ^ 2')
-            axxa.scatter(test_results[point[0]]['neighbors'],test_results[point[0]]['mean squared'], c='b', s=2)
+            axxa.set_ylabel('Mean Curvature')
+            axxa.scatter(test_results[point[0]]['neighbors'],test_results[point[0]]['mean'], c='b', s=2)
             
-            pickle.dump(figz, open(f'Mean Curvature Squared {i}.pickle', 'wb'))
+            pickle.dump(figz, open(f'Mean Curvature {i}.pickle', 'wb'))
 
     def plot_points_colored_by_quadric_curvatures(self):
         n = 1
@@ -774,14 +778,12 @@ class PointCloud:
         # plt.show()
 
     def plot_points_colored_by_quadratic_curvatures(self):
-        n = 1
-
         # self.filter_outlier_curvatures_per_neighborhood()
 
         # Gaussian Curvature from quadric calculations
         fig_curvature_K = plt.figure()
         ax_curvature_K = fig_curvature_K.add_subplot(111, projection='3d')
-        sc = ax_curvature_K.scatter(self.points[n-1:, 0], self.points[n-1:, 1], self.points[n-1:, 2], c=self.K_quadratic, cmap='viridis', s=1)
+        sc = ax_curvature_K.scatter(self.points[:, 0], self.points[:, 1], self.points[:, 2], c=self.K_quadratic, cmap='viridis', s=1)
         fig_curvature_K.colorbar(sc, ax=ax_curvature_K)
         plt.tight_layout()
         ax_curvature_K.view_init(azim=90, elev=85)
@@ -792,7 +794,7 @@ class PointCloud:
         # Mean Curvature from quadric surface
         fig_curvature_H = plt.figure()
         ax_curvature_H = fig_curvature_H.add_subplot(111, projection='3d')
-        sc = ax_curvature_H.scatter(self.points[n-1:, 0], self.points[n-1:, 1], self.points[n-1:, 2], c=self.H_quadratic, cmap='viridis', s=1)
+        sc = ax_curvature_H.scatter(self.points[:, 0], self.points[:, 1], self.points[:, 2], c=self.H_quadratic, cmap='viridis', s=1)
         fig_curvature_H.colorbar(sc, ax=ax_curvature_H)
         plt.tight_layout()
         ax_curvature_H.view_init(azim=90, elev=85)
@@ -814,6 +816,10 @@ class PointCloud:
         plt.title(f'Hist Mean Curvature from quadratic surface, K = {self.k_neighbors}, Voxel Size = {self.voxel_size}')
         plt.tight_layout()
         pickle.dump(fig_hist_H_fund, open(f'Hist Mean Curvature from quadratic surface, K = {self.k_neighbors}, Voxel Size = {self.voxel_size}.pickle', 'wb'))
+
+        # plot(self.points, c=np.array(self.K_quadratic), shading={"point_size": 10.0})
+        plot(self.points, c=np.array(self.H_quadratic), shading={"point_size": 10.0})
+        # mp.subplot(self.points, c=np.random.rand(*v.shape), s=[1, 2, 1], data=d, shading={"point_size": 0.03})
 
         # plt.show()
 
@@ -844,15 +850,15 @@ class PointCloud:
             fzy = F
 
             g = gradient = np.array([fx, fy, fz])
-            h = hessian = np.array([[fxx, fxy, 0], [fxy, fyy, 0], [0, 0, fzz]])
+            h = hessian = np.array([[fxx, fxy, fxz], [fxy, fyy, fyz], [fzx, fzy, fzz]])
             adjoint_of_hessian = adj_h = np.array([[fyy*fzz-fyz*fzy, fyz*fzx-fyx*fzz, fxy*fzy-fyy*fzx], [fxz*fzy-fyx*fzz, fxx*fzz-fxz*fzx, fxy*fzx-fxx*fzy], [fxy*fyz-fxz*fyy, fyx*fxz-fxx*fyz, fxx*fyy-fxy*fyx]])
             mag_g = np.sqrt(g.dot(g))
 
             # Gaussian Curvature
-            K_g = (np.inner(np.inner(g,adj_h),g.T))/(mag_g**4)
+            K_g = (np.dot((np.dot(g, adj_h),g)))/(mag_g**4)
 
             # Mean Curvature
-            K_m = (np.inner(np.inner(g,h),g.T)-(mag_g**2)*np.trace(h))/(2*(mag_g**3))
+            K_m = (np.dot(np.dot(g, adjoint_of_hessian), g.T))/(2*(mag_g)**4)
             # K_m = K_m**2
             # print(K_m)
 
@@ -939,111 +945,91 @@ class PointCloud:
             self.y_quadric[i] = 0
             self.z_quadric[i] = 0
 
-    def fit_quadratic_surfaces_to_neighborhoods(self, k_neighbors):
-        # Function to center the points at the origin
-        def center_points(points):
-            centroid = np.mean(points, axis=0)
-            centered_points = points - centroid
-            return centered_points, centroid
-
-        # Function to find the best-fit plane using SVD
-        def best_fit_plane(points):
-            # Assuming points are already centered
-            U, S, Vt = svd(points, full_matrices=False)
-            # The normal of the plane is the last column of V (or the last row of Vt)
-            normal = Vt[-1]
-            return normal
-
-        # Function to compute the rotation matrix to align a vector with the z-axis
-        def rotation_matrix_to_align_vector_with_z_axis(vector):
-            # Normalize the vector
-            vector = vector / np.linalg.norm(vector)
-            # Cross product with z-axis
-            cross_prod = np.cross(vector, np.array([0, 0, 1]))
-            # Sine and cosine of the angle
-            sin_angle = np.linalg.norm(cross_prod)
-            cos_angle = np.dot(vector, np.array([0, 0, 1]))
-            # Compute the skew-symmetric cross-product matrix
-            cross_prod_matrix = np.array([[0, -cross_prod[2], cross_prod[1]],
-                                        [cross_prod[2], 0, -cross_prod[0]],
-                                        [-cross_prod[1], cross_prod[0], 0]])
-            # Compute the rotation matrix using Rodrigues' rotation formula
-            rotation_matrix = np.eye(3) + cross_prod_matrix + np.dot(cross_prod_matrix, cross_prod_matrix) * ((1 - cos_angle) / (sin_angle**2))
-            return rotation_matrix
-
-        # Function to plot 3D points
-        def plot_3d_points(points, title, ax):
-            ax.scatter(points[:, 0], points[:, 1], points[:, 2])
-            ax.set_title(title)
-            ax.set_xlabel('X')
-            ax.set_ylabel('Y')
-            ax.set_zlabel('Z')
-
-        # Function to fit a quadratic surface to a collection of points
-        def fit_quadratic_surface(points):
-            # Extract x and y coordinates
-            x = points[:, 0]
-            y = points[:, 1]
-            # Combine x and y into a single array
-            xy = np.column_stack((x, y))
-            
-            # Generate polynomial features (up to degree 2)
-            poly_features = PolynomialFeatures(degree=2, include_bias=False)
-            xy_poly = poly_features.fit_transform(xy)
-            
-            # Extract z coordinates
-            z = points[:, 2]
-            
-            # Fit a linear regression model
-            model = LinearRegression()
-            model.fit(xy_poly, z)
-            
-            # Coefficients correspond to [x^2, y^2, xy, x, y] and intercept to f
-            a, b, c, d, e = model.coef_
-            f = model.intercept_
-            
-            return a, b, c, d, e, f
-        
-
-        ##################################################################################
-        # Run for each point in the point cloud
-        ##################################################################################
+    def fit_quadratic_surfaces_to_neighborhoods(self):
+    
         self.quadratic_coefficients = [[] for i in range(len(self.points))]
         for i, point in enumerate(self.points):
 
             points = self.points[self.neighbor_indices[i]]
             centered_points = points - point
 
-            # # Center the points at the origin
-            # centered_points, centroid = center_points(points)
-
             # Find the best-fit plane using SVD
-            normal = best_fit_plane(centered_points)
+            normal = self.best_fit_plane(centered_points)
 
             # Compute the rotation matrix to align the normal of the plane with the z-axis
-            rotation_matrix = rotation_matrix_to_align_vector_with_z_axis(normal)
+            rotation_matrix = self.rotation_matrix_to_align_vector_with_z_axis(normal)
 
             # Rotate the points accordingly
             rotated_points = np.dot(centered_points, rotation_matrix.T)
 
-            # Create a figure with 2 subplots (2 3D plots)
-            # fig = plt.figure(figsize=(16, 8))
-            # if i in self.random_indexes:
-            #     # Plot original points
-            #     ax1 = fig.add_subplot(121, projection='3d')
-            #     plot_3d_points(points, 'Original Points', ax1)
-
-            #     # Plot rotated points
-            #     ax2 = fig.add_subplot(122, projection='3d')
-            #     plot_3d_points(rotated_points + point, 'Rotated Points', ax2)
-
-            # # Show the plots
-            # plt.show()
-
             # Fit a quadratic surface to the rotated points
-            a, b, c, d, e, f = fit_quadratic_surface(rotated_points)
+            a, b, c, d, e, f = self.fit_quadratic_surface(rotated_points)
 
             self.quadratic_coefficients[i] = [a, b, c, d, e, f]
+
+    # Function to find the best-fit plane using SVD
+    @staticmethod
+    def best_fit_plane(points):
+
+        centroid = np.mean(points, axis=0)
+
+        centered_points = points - centroid
+        # centered_points = points
+
+        Cov = np.cov(centered_points, rowvar=False)
+
+        U, S, Vt = svd(Cov, full_matrices=True)
+
+        normal = Vt[-1]
+        return normal
+
+    # Function to compute the rotation matrix to align a vector with the z-axis
+    @staticmethod
+    def rotation_matrix_to_align_vector_with_z_axis(vector):
+        vec1 = vector
+        vec2 = np.array([0, 0, 1])
+        a, b = (vec1 / np.linalg.norm(vec1)).reshape(3), (vec2 / np.linalg.norm(vec2)).reshape(3)
+        v = np.cross(a, b)
+        c = np.dot(a, b)
+        s = np.linalg.norm(v)
+        kmat = np.array([[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]])
+        rotation_matrix = np.eye(3) + kmat + kmat.dot(kmat) * ((1 - c) / (s ** 2))
+        return rotation_matrix
+
+    # Function to plot 3D points
+    @staticmethod
+    def plot_3d_points(points, title, ax):
+        ax.scatter(points[:, 0], points[:, 1], points[:, 2])
+        ax.set_title(title)
+        ax.set_xlabel('X')
+        ax.set_ylabel('Y')
+        ax.set_zlabel('Z')
+
+    # Function to fit a quadratic surface to a collection of points
+    @staticmethod
+    def fit_quadratic_surface(points):
+        # Extract x and y coordinates
+        x = points[:, 0]
+        y = points[:, 1]
+        # Combine x and y into a single array
+        xy = np.column_stack((x, y))
+        
+        # Generate polynomial features (up to degree 2)
+        poly_features = PolynomialFeatures(degree=2, include_bias=False)
+        xy_poly = poly_features.fit_transform(xy)
+        
+        # Extract z coordinates
+        z = points[:, 2]
+        
+        # Fit a linear regression model
+        model = LinearRegression()
+        model.fit(xy_poly, z)
+        
+        # Coefficients correspond to [x^2, y^2, xy, x, y] and intercept to f
+        a, b, c, d, e = model.coef_
+        f = model.intercept_
+        
+        return a, b, c, d, e, f
 
     def reject_outliers_curvature(self):
         self.K_from_components_of_fundamental_forms = self.filter_outliers_median(self.K_from_components_of_fundamental_forms)
@@ -1065,30 +1051,20 @@ class PointCloud:
             test_results[point[0]]['principal_2'] = []
             test_results[point[0]]['neighbors'] = []
 
-            for num_neighbors in range(2, 5000):
-                tree = self.kdtree
-                dists, r_neighbor_indices = tree.query(np.array(point), num_neighbors+1)
-                point_group = points[r_neighbor_indices]
-                # Extract x and y coordinates
-                x = point_group[:, 0]
-                y = point_group[:, 1]
-                # Combine x and y into a single array
-                xy = np.column_stack((x, y))
-                
-                # Generate polynomial features (up to degree 2)
-                poly_features = PolynomialFeatures(degree=2, include_bias=False)
-                xy_poly = poly_features.fit_transform(xy)
-                
-                # Extract z coordinates
-                z = point_group[:, 2]
-                
-                # Fit a linear regression model
-                model = LinearRegression()
-                model.fit(xy_poly, z)
-                
-                # Coefficients correspond to [x^2, y^2, xy, x, y] and intercept to f
-                a, b, c, d, e = model.coef_
-                f = model.intercept_
+            for num_neighbors in range(2, 100):
+                points = self.points[self.neighbor_indices[i]]
+                centered_points = points - point
+
+                # Find the best-fit plane using SVD
+                normal = self.best_fit_plane(centered_points)
+
+                # Compute the rotation matrix to align the normal of the plane with the z-axis
+                rotation_matrix = self.rotation_matrix_to_align_vector_with_z_axis(normal)
+
+                # Rotate the points accordingly
+                rotated_points = np.dot(centered_points, rotation_matrix.T)
+
+                a, b, c, d, e, f = self.fit_quadratic_surface(rotated_points)
 
                 xf = 0
                 yf = 0
@@ -1102,16 +1078,18 @@ class PointCloud:
                 fy = 2*b*yf + c*xf + e
                 fyy = 2*b
                 fxy = c
+                fyx = c
 
-                grad_f = np.array([fx, fy, 0])
-                mag_grad_f = np.sqrt(grad_f.dot(grad_f))
-                hess_f = np.array([[fxx, fxy, 0], [fxy, fyy, 0], [0, 0, 0]])
-                hess_det = np.linalg.det(hess_f)
-                hess_cofactors = np.array([[0, 0, 0], [0, 0, 0], [0, 0, hess_det]])
+                grad_f = np.array([fx, fy])
+                mag_grad_f = np.sqrt(fx**2 + fy**2)
+                hess_f = np.array([[fxx, fxy], [fyx, fyy]])
+                hess_det = fxx*fyy - fxy*fyx
+                print(hess_det)
+                # hess_cofactors = np.array([[0, 0, 0], [0, 0, 0], [0, 0, hess_det]])
                 hess_trace = np.trace(hess_f)
 
                 # Curvatures
-                K_g = hess_det/((mag_grad_f**2)+1)**2
+                K_g = hess_det/(((mag_grad_f**2)+1)**2)
                 K_h = (np.inner(np.inner(grad_f, hess_f), grad_f.T) - ((mag_grad_f**2)+1)*hess_trace)/(2*((mag_grad_f**2)+1)**(3/2))
                 
                 # Principal Curvatures
