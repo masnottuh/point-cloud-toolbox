@@ -332,9 +332,9 @@ class PointCloud:
         params_optimal = result.x
 
         # Unpack the optimal parameters
-        A, B, D, E, F, G = params_optimal
+        A, B, C, D, E, F = params_optimal
 
-        return A, B, D, E, F, G
+        return A, B, C, D, E, F
     
     @staticmethod
     def fit_implicit_quadric_surface(points):
@@ -674,7 +674,7 @@ class PointCloud:
                     coefs = self.fit_quadratic_surface(points)
                 except:
                     error_points+=1
-                    ceofs = 0, 0, 0, 0, 0, 0
+                    coefs = 0, 0, 0, 0, 0, 0
                 
                 normal = self.normals[i]
                 K_g, K_h, k1, k2 = self.calculate_explicit_quadratic_curvatures(coefs)
