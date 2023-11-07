@@ -6,19 +6,15 @@
 from pointCloudToolbox import *
 ########################################################################
 
-
-
 ########################################################################
 # Modify these variables to change the behavior of the program
 ########################################################################
 num_visualization_demo_points = 5
-neighbors_for_surface_fit = [10, 15, 20] #minimum of 4!
+neighbors_for_surface_fit = [25, 30, 35, 40, 45, 50] #minimum of 4!
 voxel_sizes = [3, 2, 1, 0.5, 0] #set to zero if you don't need to downsample
 cloud_types = ['sridge'] #sridge, sphere, torus, klein, dupin, monkey, bumpy_spheroid
 surface_fitting_method = 'explicit' #implicit or explicit
 ########################################################################
-
-
 
 ########################################################################
 # Don't touch below here unless you wish to modify execution behavior
@@ -44,9 +40,9 @@ if __name__ == '__main__':
                     pcl = PointCloud('./sample_scans/sridge.txt', downsample, voxel_size=voxel_size, k_neighbors=neighbors_for_tree, output_path ='./output/sridge/')
 
                 elif cloud_type == 'sphere':
-                    print(f'Running for sphere')
+                    print(f'Running for sphere, voxel size of {voxel_size}')
                     pcl = PointCloud('./sample_scans/sridge.txt', downsample, voxel_size=voxel_size, k_neighbors=neighbors_for_tree, output_path = './output/sphere/')
-                    pcl.generate_sphere_point_cloud(num_points=10000, radius=10)
+                    pcl.generate_sphere_point_cloud(num_points=100000, radius=10)
 
                 elif cloud_type == 'klein':
                     print(f'Running for klein bottle')
@@ -71,7 +67,6 @@ if __name__ == '__main__':
                 else:
                     print('Cloud type not recognized, exiting')
                     exit()
-
 
 
                 print("planting tree")

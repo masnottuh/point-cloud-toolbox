@@ -664,7 +664,7 @@ class PointCloud:
             test_results[point[0]]['neighbors'] = []
 
             error_points = 0
-            for num_neighbors in range(2, 100):
+            for num_neighbors in range(3, 100):
                 neighbor_inds = self.kdtree.query(point, num_neighbors+1)[1]
                 points = self.points[neighbor_inds]
                 centered_points = points - point
@@ -684,7 +684,7 @@ class PointCloud:
                 test_results[point[0]]['mean'].append(K_h)
                 test_results[point[0]]['principal_1'].append(k1)
                 test_results[point[0]]['principal_2'].append(k2)
-            print(f'error point in neighbor hunt only')
+            print(f'error point in neighbor hunt only (k = {num_neighbors}))')
             #plot test results
             figy = plt.figure()
             axx = figy.add_subplot(1, 1, 1)
