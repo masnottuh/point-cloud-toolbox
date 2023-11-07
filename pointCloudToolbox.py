@@ -475,45 +475,6 @@ class PointCloud:
         self.points = np.array(self.points)
         self.normals = np.array(self.normals)
 
-   
-        point_cloud = self.points
-        normals = self.normals
-        voxel_size = self.voxel_size
-
-        # Extract x, y, z coordinates from the input point cloud
-        xyz = point_cloud[:, :3]
-        
-        # Calculate the minimum and maximum bounds of the point cloud
-        min_bound = np.min(xyz, axis=0)
-        max_bound = np.max(xyz, axis=0)
-        
-        # Calculate the number of voxels in each dimension
-        num_voxels = np.ceil((max_bound - min_bound) / voxel_size).astype(int)
-        
-        # Calculate the indices of the voxels for each point
-        voxel_indices = ((xyz - min_bound) / voxel_size).astype(int)
-        
-        # Initialize a dictionary to store the indices of points in each voxel
-        voxel_point_indices = {}
-        
-        # Group point indices into voxels
-        for i, indices in enumerate(voxel_indices):
-            voxel_key = tuple(indices)
-            if voxel_key not in voxel_point_indices:
-                voxel_point_indices[voxel_key] = []
-            voxel_point_indices[voxel_key].append(i)
-        
-        # Select points from each voxel with up to 'max_points_per_voxel' points
-        selected_indices = []
-        for indices in voxel_point_indices.values():
-            selected_indices.extend(indices[:max_points_per_voxel])
-        
-        # Extract the selected points
-        ddownsampled_point_cloud = point_cloud[selected_indices]
-        dnormals = normals[selected_indices]
-        
-        return ddownsampled_point_cloud, dnormals
-
     def visualize_knn_for_n_random_points(self, num_points_to_plot, k_neighbors):
 
         fig = plt.figure()
@@ -686,7 +647,7 @@ class PointCloud:
             self.K_quadric.append(K_g)
             self.H_quadric.append(K_h)
 
-    def explicit_quadratic_neighbor_study(self, method):
+    def explicit_quadratic_neighbor_study(self):
         points = self.points
         # normals = self.normals
         random_indexes = self.random_indexes

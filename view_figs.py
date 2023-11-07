@@ -6,7 +6,7 @@ import fnmatch
 import matplotlib.style as mplstyle
 mplstyle.use('fast')
 
-file_directory = "./"
+file_directory = "./output/klein/"
 # files = [os.path.join(file_directory, file) for file in os.listdir(file_directory) if file.startswith("Gaussian")]
 files = [os.path.join(file_directory, file) for file in os.listdir(file_directory) if file.endswith(".pickle")]
 

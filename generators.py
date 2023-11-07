@@ -118,11 +118,11 @@ def save_points_to_txt(file_path, points):
 # Parameters for the torus
 major_radius = 10  # Major radius
 minor_radius = 3   # Minor radius
-n_points = 10000    # Number of points
+n_points = 100000    # Number of points
 # Generate points on the surface of the torus
 torus_points = generate_torus_points(major_radius, minor_radius, n_points)
 # Path for the output file
-output_file_path = './torus.txt'
+output_file_path = './sample_scans/torus.txt'
 # Save the points to a txt file
 save_points_to_txt(output_file_path, torus_points)
 
@@ -132,11 +132,11 @@ save_points_to_txt(output_file_path, torus_points)
 # Parameters for the monkey saddle
 a_range = 2  # Range for x and y
 b_coefficient = 1  # Coefficient for the monkey saddle equation
-n_points = 10000  # Number of points
+n_points = 100000  # Number of points
 # Generate points on the surface of the monkey saddle
 monkey_saddle_points = generate_monkey_saddle_points(a_range, b_coefficient, n_points)
 # Path for the output file
-output_file_path_monkey_saddle = './monkey_saddle.txt'
+output_file_path_monkey_saddle = './sample_scans/monkey_saddle.txt'
 save_points_to_txt(output_file_path_monkey_saddle, monkey_saddle_points)
 # Provide the path for download
 output_file_path_monkey_saddle
@@ -146,12 +146,12 @@ output_file_path_monkey_saddle
 # Parameters for the bumpy spheroid
 a_radius = 5  # Semi-major axis (equatorial radius)
 c_radius = 5  # Semi-minor axis (polar radius)
-n_points = 1000  # Number of points
+n_points = 100000  # Number of points
 bump_amplitude = 0.1  # Amplitude of the bumpiness
 # Generate points on the surface of the bumpy spheroid
 bumpy_spheroid_points = generate_bumpy_spheroid_points(a_radius, c_radius, n_points, bump_amplitude)
 # Path for the output file
-output_file_path_bumpy_spheroid = './bumpy_spheroid.txt'
+output_file_path_bumpy_spheroid = './sample_scans/bumpy_spheroid.txt'
 # Save the points to a txt file
 save_points_to_txt(output_file_path_bumpy_spheroid, bumpy_spheroid_points)
 # Provide the path for download
@@ -160,28 +160,28 @@ output_file_path_bumpy_spheroid
 
 #KLEIN BOTTLE
 # Create a meshgrid for the parameters u and v
-u = np.linspace(0, 2 * np.pi, 100)
-v = np.linspace(0, 2 * np.pi, 100)
+u = np.linspace(0, 2 * np.pi, 10000)
+v = np.linspace(0, 2 * np.pi, 10000)
 u, v = np.meshgrid(u, v)
 # Generate the points on the surface of the Klein Bottle
 x, y, z = klein_bottle(u.flatten(), v.flatten())
 # Combine x, y, and z into a single array
 klein_points = np.column_stack((x, y, z))
 # Save the points to a text file
-klein_points_path = './klein_bottle.txt'
+klein_points_path = './sample_scans/klein_bottle.txt'
 np.savetxt(klein_points_path, klein_points, fmt='%.6f')
 
 
 
 #DUPIN CYCLIDE
 # Create a meshgrid for the parameters u and v
-u = np.linspace(0, 2 * np.pi, 100)
-v = np.linspace(0, 2 * np.pi, 100)
+u = np.linspace(0, 2 * np.pi, 10000)
+v = np.linspace(0, 2 * np.pi, 10000)
 u, v = np.meshgrid(u, v)
 # Generate the points on the surface of the Dupin Cyclide
 x, y, z = dupin_cyclide(u.flatten(), v.flatten())
 # Combine x, y, and z into a single array
 dupin_points = np.column_stack((x, y, z))
 # Save the points to a text file
-dupin_points_path = './dupin_cyclide.txt'
+dupin_points_path = './sample_scans/dupin_cyclide.txt'
 np.savetxt(dupin_points_path, dupin_points, fmt='%.6f')
