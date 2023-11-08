@@ -12,7 +12,7 @@ from pointCloudToolbox import *
 num_visualization_demo_points = 5
 neighbors_for_surface_fit = [10, 15, 25, 30, 35, 40, 45, 50] #minimum of 4!
 voxel_sizes = [0] #set to zero if you don't need to downsample
-cloud_types = ['sphere'] #sridge, sphere, torus, klein, dupin, monkey, bumpy_spheroid, mobius, bunny
+cloud_types = ['torus'] #sridge, sphere, torus, klein, dupin, monkey, bumpy_spheroid, mobius, bunny, carton
 surface_fitting_method = 'explicit' #implicit or explicit
 ########################################################################
 
@@ -71,7 +71,10 @@ if __name__ == '__main__':
                 elif cloud_type == 'bunny':
                     print(f'Running for bunny')
                     pcl = PointCloud('./sample_scans/bunny.txt', downsample, voxel_size=voxel_size, k_neighbors=neighbors_for_tree, output_path = './output/bunny/')
-                    
+                
+                elif cloud_type == 'carton':
+                    print(f'Running for carton')
+                    pcl = PointCloud('./sample_scans/carton.txt', downsample, voxel_size=voxel_size, k_neighbors=neighbors_for_tree, output_path = './output/carton/')
 
                 else:
                     print('Cloud type not recognized, exiting')
