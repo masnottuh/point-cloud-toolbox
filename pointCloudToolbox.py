@@ -294,50 +294,6 @@ class PointCloud:
         rotated_points = np.dot(rotation_matrix, points.T).T
         
         return rotated_points
-    # @staticmethod
-    # def get_best_fit_plane_and_rotate(points):
-
-    #     # centroid = np.mean(points, axis=0)
-
-    #     centered_points = points
-
-    #     Cov = np.cov(centered_points, rowvar=False)
-    #     U, S, Vt = svd(Cov, full_matrices=True)
-
-    #     # Extract the normal vector
-    #     normal = Vt[-1]
-
-    #     # Calculate finite difference vectors between points
-    #     finite_diffs = np.diff(points, axis=0)
-
-    #     # Normalize the normal vector for accurate dot product calculations
-    #     normal_normalized = normal / np.linalg.norm(normal)
-
-    #     # Determine the direction of the majority of finite difference vectors
-    #     dot_products = np.dot(finite_diffs, normal_normalized)
-
-    #     # If the majority of finite difference vectors have a negative dot product with the normal vector
-    #     if np.sum(dot_products < 0) > (len(dot_products) / 2):
-    #         # Flip the normal vector
-    #         normal = -normal
-
-    #     vec1 = normal
-    #     vec2 = np.array([0, 0, 1])
-
-    #     a, b = (vec1 / np.linalg.norm(vec1)).reshape(3), (vec2 / np.linalg.norm(vec2)).reshape(3)
-    #     v = np.cross(a, b)
-    #     c = np.dot(a, b)
-    #     s = np.linalg.norm(v)
-
-    #     kmat = np.array([[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]])
-
-    #     rotation_matrix = np.eye(3) + kmat + kmat.dot(kmat) * ((1 - c) / (s ** 2))
-    #     rotated_points = np.dot(rotation_matrix, points.T).T
-    #     # rotated_normal = np.dot(rotation_matrix, normal)
-
-    #     points = rotated_points
-
-    #     return points
     
     @staticmethod
     def plot_3d_points(points, title, ax):
