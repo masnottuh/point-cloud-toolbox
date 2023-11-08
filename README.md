@@ -9,10 +9,9 @@ The work presented here is part of active research at the University of Nevada, 
 
 rhutton@unr.edu
 
-![alt text](https://github.com/masnottuh/point-cloud-toolbox/blob/main/img/torus.png)
 ![alt text](https://github.com/masnottuh/point-cloud-toolbox/blob/main/img/bunny1.png)
 ![alt text](https://github.com/masnottuh/point-cloud-toolbox/blob/main/img/bunny2.png)
 ![alt text](https://github.com/masnottuh/point-cloud-toolbox/blob/main/img/carton1.png)
 ![alt text](https://github.com/masnottuh/point-cloud-toolbox/blob/main/img/carton2.png)
 ![alt text](https://github.com/masnottuh/point-cloud-toolbox/blob/main/img/sridge.png)
-
+![alt text](https://github.com/masnottuh/point-cloud-toolbox/blob/main/img/torus.png)
