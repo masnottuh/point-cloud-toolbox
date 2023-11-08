@@ -391,7 +391,7 @@ class PointCloud:
         # https://en.wikipedia.org/wiki/Gaussian_curvature
         # https://en.wikipedia.org/wiki/Mean_curvature
         K_g = (Fxx*Fyy - Fxy**2)/((1 + Fx**2 + Fy**2)**2)
-        K_h = ((1+Fx**2)*(Fyy)-2*Fx*Fy*Fxy+(1+Fy**2)*Fxx)/((1+Fx**2+Fy**2)**(3/2))
+        K_h = ((1+Fx**2)*(Fyy)-2*Fx*Fy*Fxy+(1+Fy**2)*Fxx)/(2*((1+Fx**2+Fy**2)**(3/2)))
 
         # principal Curvatures
         k1 = K_h + np.sqrt(K_h**2 - K_g)
