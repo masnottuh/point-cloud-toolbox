@@ -10,9 +10,9 @@ from pointCloudToolbox import *
 # Modify these variables to change the behavior of the program
 ########################################################################
 num_visualization_demo_points = 5
-neighbors_for_surface_fit = [10, 15, 25, 30, 35, 40, 45, 50] #minimum of 4!
+neighbors_for_surface_fit = [200, 300, 500, 800] #minimum of 4!
 voxel_sizes = [0] #set to zero if you don't need to downsample
-cloud_types = ['torus'] #sridge, sphere, torus, klein, dupin, monkey, bumpy_spheroid, mobius, bunny, carton
+cloud_types = ['gavin-1'] #sridge, sphere, torus, klein, dupin, monkey, bumpy_spheroid, mobius, bunny, carton
 surface_fitting_method = 'explicit' #implicit or explicit
 ########################################################################
 
@@ -26,7 +26,7 @@ if __name__ == '__main__':
 
                 neighbors_for_tree = neighbors
 
-                voxel_size = 0
+                # voxel_size = 0
 
                 downsample = False
 
@@ -75,6 +75,14 @@ if __name__ == '__main__':
                 elif cloud_type == 'carton':
                     print(f'Running for carton')
                     pcl = PointCloud('./sample_scans/carton.txt', downsample, voxel_size=voxel_size, k_neighbors=neighbors_for_tree, output_path = './output/carton/')
+
+                elif cloud_type == 'gavin-1':
+                    if voxel_size != 0 :
+                        downsample = True
+                    else:
+                        downsample = False
+                    print(f'Running for gavin-1')
+                    pcl = PointCloud('./sample_scans/gavin-1.txt', downsample, voxel_size=voxel_size, k_neighbors=neighbors_for_tree, output_path = './output/gavin-1/')
 
                 else:
                     print('Cloud type not recognized, exiting')

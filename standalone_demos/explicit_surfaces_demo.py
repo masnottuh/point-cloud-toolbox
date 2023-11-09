@@ -23,7 +23,6 @@ def get_best_fit_plane(points):
     normal = Vt[-1]
 
     ax.quiver(0,0,0,Vt[:,0], Vt[:,1], Vt[:,2],color='g', arrow_length_ratio=0.001)
-    ax.quiver(0,0,0,normal[0], normal[1], normal[2], color='r', arrow_length_ratio=0.001)
     # plt.show()
 
     vec1 = normal
@@ -38,7 +37,7 @@ def get_best_fit_plane(points):
     # Rotate the points and the plane normal
     rotated_points = np.dot(rotation_matrix, points.T).T
     rotated_normal = np.dot(rotation_matrix, normal)
-
+    ax.quiver(0,0,0,rotated_normal[0], rotated_normal[1], rotated_normal[2], color='r', arrow_length_ratio=0.001)
     # plot 
     # fig = plt.figure()
     # ax = fig.add_subplot(1, 1, 1, projection='3d')

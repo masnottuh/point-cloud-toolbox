@@ -392,12 +392,13 @@ class PointCloud:
         # https://en.wikipedia.org/wiki/Mean_curvature
         K_g = (Fxx*Fyy - Fxy**2)/((1 + Fx**2 + Fy**2)**2)
         K_h = ((1+Fx**2)*(Fyy)-2*Fx*Fy*Fxy+(1+Fy**2)*Fxx)/(2*((1+Fx**2+Fy**2)**(3/2)))
+        K_h_sq = K_h**2
 
         # principal Curvatures
         k1 = K_h + np.sqrt(K_h**2 - K_g)
         k2 = K_h- np.sqrt(K_h**2 - K_g)
 
-        return K_g, K_h, k1, k2
+        return K_g, K_h, k1, k2, K_h_sq
 
     @staticmethod
     def calculate_implicit_quadric_curvatures(coefficients):
@@ -559,6 +560,18 @@ class PointCloud:
         ax_curvature_H.set_title(f'Mean Curvature from quadratic surface, K = {self.k_neighbors}, Voxel Size = {self.voxel_size}')
         pickle.dump(fig_curvature_H, open(f'{self.output_path}Mean Curvature from quadratic surface, K = {self.k_neighbors}, Voxel Size = {self.voxel_size}.pickle', 'wb'))
 
+
+        # Mean Curvature squared from quadric surface
+        fig_curvature_H2 = plt.figure()
+        ax_curvature_H2 = fig_curvature_H2.add_subplot(111, projection='3d')
+        sc2 = ax_curvature_H2.scatter(self.points[:, 0], self.points[:, 1], self.points[:, 2], c=self.K_H_sq_quadratic, cmap='viridis', s=1)
+        fig_curvature_H2.colorbar(sc2, ax=ax_curvature_H2)
+        plt.tight_layout()
+        ax_curvature_H2.view_init(azim=90, elev=85)
+        ax_curvature_H2.set_axis_off()
+        ax_curvature_H2.set_title(f'Mean Curvature squared from quadratic surface, K = {self.k_neighbors}, Voxel Size = {self.voxel_size}')
+        pickle.dump(fig_curvature_H2, open(f'{self.output_path}Mean Curvature Squared from quadratic surface, K = {self.k_neighbors}, Voxel Size = {self.voxel_size}.pickle', 'wb'))
+
         # plt.show()
 
         # Plot histograms
@@ -616,16 +629,18 @@ class PointCloud:
 
         self.K_quadratic = []
         self.H_quadratic = []
+        self.K_H_sq_quadratic = []
 
         for i, point in enumerate(self.points):
 
             normal = self.normals[i]
             coefs = self.quadratic_coefficients[i]
 
-            K_g, K_h, k1, k2 = self.calculate_explicit_quadratic_curvatures(coefs)
+            K_g, K_h, k1, k2, K_h_sq = self.calculate_explicit_quadratic_curvatures(coefs)
 
             self.K_quadratic.append(K_g)
             self.H_quadratic.append(K_h)
+            self.K_H_sq_quadratic.append(K_h_sq)
 
     def calculate_curvatures_of_implicit_quadric_surfaces_for_all_points(self):
 
@@ -672,7 +687,7 @@ class PointCloud:
                     coefs = 0, 0, 0, 0, 0, 0
                 
                 normal = self.normals[i]
-                K_g, K_h, k1, k2 = self.calculate_explicit_quadratic_curvatures(coefs)
+                K_g, K_h, k1, k2, _ = self.calculate_explicit_quadratic_curvatures(coefs)
 
                 test_results[point[0]]['neighbors'].append(num_neighbors)
                 test_results[point[0]]['gaussian'].append(K_g)
@@ -861,6 +876,7 @@ class PointCloud:
         ax0.set_axis_off()
         plt.title(f'Mean curvature from PCA k={self.k_neighbors} voxel size={self.voxel_size}')
         pickle.dump(fig0, open(f'{self.output_path}mean_curvature_from_PCA_k_{self.k_neighbors}_voxel_size_{self.voxel_size}.pickle', 'wb'))
+
 
         # plt.show()
 
