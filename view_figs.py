@@ -5,7 +5,7 @@ import os
 import matplotlib.style as mplstyle
 mplstyle.use('fast')
 
-file_directory = "./output/gavin-1/"
+file_directory = "./output/sridge/"
 # files = [os.path.join(file_directory, file) for file in os.listdir(file_directory) if file.startswith("Gaussian")]
 files = [os.path.join(file_directory, file) for file in os.listdir(file_directory) if file.endswith(".pickle")]
 
