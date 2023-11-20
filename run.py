@@ -13,7 +13,7 @@ num_visualization_demo_points = 5
 neighbors_for_surface_fit = [30] #minimum of 4!
 voxel_sizes = [0] #set to zero if you don't need to downsample
 cloud_types = ['gavin-1'] #sridge, sphere, torus, klein, dupin, monkey, bumpy_spheroid, mobius, bunny, carton
-surface_fitting_method = 'explicit' #implicit or explicit
+surface_fitting_method = 'explicit' #implicit or explicit (implicit working)
 ########################################################################
 
 ########################################################################
