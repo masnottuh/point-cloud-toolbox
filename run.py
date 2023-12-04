@@ -19,6 +19,8 @@ surface_fitting_method = 'explicit' #implicit or explicit (implicit working)
 ########################################################################
 # Don't touch below here unless you wish to modify execution behavior
 ########################################################################
+# This code is used to run the point cloud generation for the different point clouds and various parameters. The parameters used are listed in the variables above. For each point cloud and each set of parameters, a PointCloud object is created and the generate_point_cloud() method is run. The PointCloud object then creates a point cloud with the given parameters and saves the point cloud to the output path specified in the PointCloud object.
+
 if __name__ == '__main__':
     for cloud_type in cloud_types:
         for neighbors in neighbors_for_surface_fit:
