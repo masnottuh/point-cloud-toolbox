@@ -10,7 +10,7 @@ The main approach is essentially:
 4. The neighborhood is rotated to align this plane with the xy-axis, repositioning the central point at the origin. The z-axis is approximated as the normal.
 5. Consistency in curvature signs is ensured by adjusting the orientation based on the dot product between the z-axis and vectors in the neighborhood.
 6. A quadratic surface is fitted to the neighborhood points using least-squares regression on a cost-function learning basis, yielding an explicit function \( F(x, y) = z \) represented by using weights as coefficients.
-7. Curvatures are computed using the following formulations, derived from classical differential geometry sources such as Do Carmo, Spivak, and Gauss's works
+7. Curvatures are computed using classical differential geometry sources such as Do Carmo, Spivak, and Gauss
 
 The utilities live within the PointCloud class in pointCloudToolbox.py, you can see the implementation of known expressions for curvature within.
 
