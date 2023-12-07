@@ -17,7 +17,7 @@ The utilities live within the PointCloud class in pointCloudToolbox.py, you can 
 The work presented here is part of active research at the University of Nevada, Reno - please contact me if you would like to talk about the tools within.
 rhutton@unr.edu
 
-Below are some point clouds I have scanned/generated which represent hypersurfaces in Euclidian 3-space. The points have been colored according to the calculated curvatures at the point.
+Below are some point clouds I have scanned/generated/downloaded which represent hypersurfaces in Euclidian 3-space. The points have been colored according to the calculated curvatures at the point.
 
 ![alt text](https://github.com/masnottuh/point-cloud-toolbox/blob/main/img/bunny1.png)
 ![alt text](https://github.com/masnottuh/point-cloud-toolbox/blob/main/img/bunny2.png)
