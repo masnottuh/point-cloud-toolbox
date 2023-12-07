@@ -3,7 +3,7 @@
 
 Python library for point cloud processing. The main emphasis is on discrete curvature measures, for now. 
 
-The main approach is essentially:
+The main approach (used in run.py) for calculating the approximate discrete curvatures is essentially:
 1. A k-dimensional tree is constructed from the input point cloud to organize the data spatially.
 2. For each point, the k nearest neighbors are determined using the k-d tree, supporting both distance-based and epsilon-ball queries.
 3. The singular value decomposition (SVD) is employed on each neighborhood to ascertain the characteristic plane, aligning with the first two vectors.
