@@ -4,15 +4,16 @@
 # rhutton@unr.edu or sam@samhutton.net
 ########################################################################
 from pointCloudToolbox import *
+
 ########################################################################
 
 ########################################################################
 # Modify these variables to change the behavior of the program
 ########################################################################
 num_visualization_demo_points = 5
-neighbors_for_surface_fit = [30] #minimum of 4!
+neighbors_for_surface_fit = [825] #minimum of 4!
 voxel_sizes = [0] #set to zero if you don't need to downsample
-cloud_types = ['gavin-1'] #sridge, sphere, torus, klein, dupin, monkey, bumpy_spheroid, mobius, bunny, carton
+cloud_types = ['sridge'] #sridge, sphere, torus, klein, dupin, monkey, bumpy_spheroid, mobius, bunny, carton
 surface_fitting_method = 'explicit' #implicit or explicit (implicit working)
 ########################################################################
 
@@ -121,10 +122,16 @@ if __name__ == '__main__':
                     pcl.fit_explicit_quadratic_surfaces_to_neighborhoods()
 
                     print("calculating quadratic curvatures")
-                    pcl.calculate_curvatures_of_explicit_quadratic_surfaces_for_all_points() # use 'goldmans' or 'standard'
+                    gaussian_curvature, mean_curvature = pcl.calculate_curvatures_of_explicit_quadratic_surfaces_for_all_points() # use 'goldmans' or 'standard'
 
                     print("plotting quadratic curvatures")
                     pcl.plot_points_colored_by_quadratic_curvatures()
+
+                    print("saving to ply format")
+                    mesh_path = "output_with_curvatures.ply"
+                    pcl.export_ply_with_curvature_and_normals('output_with_curvatures_and_normals.ply')
+
+
                 #####################################################
                 #####################################################
 

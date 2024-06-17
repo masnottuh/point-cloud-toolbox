@@ -80,7 +80,7 @@ def fit_quadratic_surface_to_points(points, ax):
     ax.plot_surface(xx, yy, zz, color='r', alpha=0.5, rstride=1, cstride=1, edgecolor='none')
 
     # Plot the data points
-    ax.scatter(points[:,0], points[:,1], points[:,2], color='b')
+    ax.scatter(points[:,0], points[:,1], points[:,2], color='black')
 
     ax.set_xlabel('X-axis')
     ax.set_ylabel('Y-axis')

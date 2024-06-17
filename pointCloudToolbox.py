@@ -14,7 +14,8 @@ from scipy.optimize import least_squares
 import pickle
 from scipy.optimize import minimize
 from scipy.linalg import svd
-
+import pymesh
+import pyvista as pv
 
 
 class PointCloud:
@@ -625,6 +626,14 @@ class PointCloud:
             # Fit a quadratic surface to the rotated points
             self.quadratic_coefficients[i] = self.fit_quadratic_surface(points)
 
+    @staticmethod
+    def calculate_energies(voronoi_areas, gaussian_curvature, mean_curvature):
+        # Calculate bending and stretching energies
+        bending_energy = sum((h ** 2) * area for h, area in zip(mean_curvature, voronoi_areas))
+        stretching_energy = sum(k * area for k, area in zip(gaussian_curvature, voronoi_areas))
+
+        return bending_energy, stretching_energy
+
     def calculate_curvatures_of_explicit_quadratic_surfaces_for_all_points(self):
 
         self.K_quadratic = []
@@ -641,6 +650,8 @@ class PointCloud:
             self.K_quadratic.append(K_g)
             self.H_quadratic.append(K_h)
             self.K_H_sq_quadratic.append(K_h_sq)
+        
+        return self.K_quadratic, self.H_quadratic
 
     def calculate_curvatures_of_implicit_quadric_surfaces_for_all_points(self):
 
@@ -656,6 +667,33 @@ class PointCloud:
 
             self.K_quadric.append(K_g)
             self.H_quadric.append(K_h)
+
+    def compute_normals(self):
+        """Compute normals for the point cloud and store them in self.normals."""
+        cloud = pv.PolyData(self.points)
+        if cloud.n_points > 0 and cloud.n_cells == 0:
+            cloud = cloud.delaunay_2d()
+        cloud.compute_normals(point_normals=True, cell_normals=False, inplace=True)
+        self.normals = cloud.point_data['normals']
+
+    def export_ply_with_curvature_and_normals(self, filename):
+        """Export the point cloud to a PLY file including normals and curvature data."""
+        if self.normals is None:
+            self.compute_normals()
+        
+        # Create a PyVista point cloud object
+        cloud = pv.PolyData(self.points)
+        cloud.point_data['normals'] = self.normals
+        cloud.point_data['gaussian_curvature'] = self.K_quadratic
+        cloud.point_data['mean_curvature'] = self.H_quadratic
+
+        # Debugging: Check what's in point_data before saving
+        print("Point Data Keys:", cloud.point_data.keys())
+
+        # Save the point cloud as a PLY file
+        cloud.save(filename, binary=False)  # Use binary=False for ASCII format
+
+
 
     def explicit_quadratic_neighbor_study(self):
         points = self.points
@@ -769,6 +807,24 @@ class PointCloud:
             axxa.scatter(test_results[point[0]]['neighbors'],test_results[point[0]]['mean'], c='b', s=2)
             
             pickle.dump(figz, open(f'{self.output_path}Mean Curvature study, Voxel Size = {self.voxel_size} {i}.pickle', 'wb'))
+
+    def calculate_energies(self, mesh_path):
+        # Load mesh
+        mesh = pymesh.load_mesh(mesh_path)
+        
+        # Compute curvatures
+        pymesh.curvature(mesh)
+        gaussian_curvature = mesh.get_attribute("vertex_gaussian_curvature")
+        mean_curvature = mesh.get_attribute("vertex_mean_curvature")
+        
+        # Compute dual area (similar to Voronoi area)
+        dual_area = mesh.get_attribute("vertex_dual_area")
+        
+        # Calculate energies
+        bending_energy = sum((H**2 * area for H, area in zip(mean_curvature, dual_area)))
+        stretching_energy = sum((K * area for K, area in zip(gaussian_curvature, dual_area)))
+
+        return bending_energy, stretching_energy
 
     def principal_curvatures_via_principal_component_analysis(self, k_neighbors):
         num_points = len(self.points)
