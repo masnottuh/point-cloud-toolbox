@@ -14,7 +14,7 @@ num_visualization_demo_points = 5
 neighbors_for_surface_fit = [825] #minimum of 4!
 voxel_sizes = [0] #set to zero if you don't need to downsample
 cloud_types = ['sridge'] #sridge, sphere, torus, klein, dupin, monkey, bumpy_spheroid, mobius, bunny, carton
-surface_fitting_method = 'explicit' #implicit or explicit (implicit working)
+surface_fitting_method = 'explicit' #implicit or explicit (explicit working)
 ########################################################################
 
 ########################################################################
@@ -99,20 +99,7 @@ if __name__ == '__main__':
                 pcl.visualize_knn_for_n_random_points(num_points_to_plot=num_visualization_demo_points, k_neighbors=neighbors)
 
                 #####################################################
-                #####################################################
-                if surface_fitting_method == 'implicit':
-                    print("Running neighbor study")
-                    pcl.implicit_quadric_neighbor_study()
-
-                    print("fitting implicit quadrics")
-                    pcl.fit_implicit_quadric_surfaces_all_points()
-
-                    print("calculating quadric curvatures")
-                    pcl.calculate_curvatures_of_implicit_quadric_surfaces_for_all_points()
-
-                    print("plotting points colored by curvature")
-                    pcl.plot_points_colored_by_quadric_curvatures()
-                #####################################################
+                
                 #####################################################
                 if surface_fitting_method == 'explicit':
                     print("Running neighbor study")
@@ -133,6 +120,20 @@ if __name__ == '__main__':
 
 
                 #####################################################
+                #####################################################
+                #####################################################
+                # if surface_fitting_method == 'implicit':
+                #     print("Running neighbor study")
+                #     pcl.implicit_quadric_neighbor_study()
+
+                #     print("fitting implicit quadrics")
+                #     pcl.fit_implicit_quadric_surfaces_all_points()
+
+                #     print("calculating quadric curvatures")
+                #     pcl.calculate_curvatures_of_implicit_quadric_surfaces_for_all_points()
+
+                #     print("plotting points colored by curvature")
+                #     pcl.plot_points_colored_by_quadric_curvatures()
                 #####################################################
 
                 plt.close('all')

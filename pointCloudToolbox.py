@@ -20,46 +20,46 @@ import pyvista as pv
 
 class PointCloud:
 
-    def __init__(self, file_path, downsample, voxel_size, k_neighbors, output_path, max_points_per_voxel=1):
-        #initial parameters
-        self.file_path = file_path
+    def __init__(self, file_path=None, points=None, normals=None, downsample=False, voxel_size=0, k_neighbors=20, output_path='./output/', max_points_per_voxel=1):
         self.downsample = downsample
         self.k_neighbors = k_neighbors
         self.voxel_size = voxel_size
         self.max_points_per_voxel = max_points_per_voxel
         self.output_path = output_path
-        self.readFromFile()
+        self.random_indexes = []
 
-        #secondary parameters
+        if file_path:
+            self.file_path = file_path
+            self.read_from_file()
+        elif points is not None and normals is not None:
+            self.points = points
+            self.normals = normals
+        else:
+            raise ValueError("Either file_path or points and normals must be provided")
+
         self.num_points = len(self.points)
         self.num_features = len(self.points[0])
         self.l1_norm = np.linalg.norm(self.points, 1)
         self.l2_norm = np.linalg.norm(self.points, 2)
         self.infinity_norm = np.linalg.norm(self.points, np.inf)
 
-    def readFromFile(self):
-
+    def read_from_file(self):
         points = np.loadtxt(self.file_path)
-        # print("Points and normals loaded from file.")
-
         self.points = points[:, 0:3]
         self.normals = points[:, 3:6]
 
-        #shift the points to the positive quadrant
-        self.points[:, 0] = self.points[:, 0] - np.max(self.points[:, 0])
-        self.points[:, 1] = self.points[:, 1] - np.max(self.points[:, 1])
+        self.points[:, 0] -= np.max(self.points[:, 0])
+        self.points[:, 1] -= np.max(self.points[:, 1])
 
-        #downsample if set to true, otherwise just use the points as is
-        if self.downsample==True:
+        if self.downsample:
             self.points, self.normals = self.downsample_point_cloud_by_grid()
-            #shift the points to the positive quadrant
-            self.points[:, 0] = self.points[:, 0] - np.min(self.points[:, 0])
-            self.points[:, 1] = self.points[:, 1] - np.min(self.points[:, 1])
-            # print(f"Point cloud downsampled using voxel size of {self.voxel_size} and max points per voxel of {self.max_points_per_voxel}.")
+            self.points[:, 0] -= np.min(self.points[:, 0])
+            self.points[:, 1] -= np.min(self.points[:, 1])
 
         self.x_domain = [np.min(self.points[:, 0]), np.max(self.points[:, 0])]
         self.y_domain = [np.min(self.points[:, 1]), np.max(self.points[:, 1])]
         self.z_domain = [np.min(self.points[:, 2]), np.max(self.points[:, 2])]
+
 
     def plant_kdtree(self, k_neighbors):
         self.k_neighbors = k_neighbors
@@ -258,25 +258,29 @@ class PointCloud:
     
     @staticmethod
     def get_best_fit_plane_and_rotate(points):
+        # Check for finite values in input points
+        if not np.all(np.isfinite(points)):
+            raise ValueError("Non-finite values in input points")
+
         # Calculate the covariance matrix of the centered points
         Cov = np.cov(points, rowvar=False)
-        
+
         # Perform Singular Value Decomposition
-        U, S, Vt = svd(Cov, full_matrices=True)
-        
+        U, S, Vt = np.linalg.svd(Cov, full_matrices=True)
+
         # Extract the normal vector from the last singular vector
         normal = Vt[-1]
-        
+
         # Choose a reference vector as the vector from the first point to the last point in the collection
         reference_vector = points[-1] - points[0]
-        
+
         # Normalize the normal and reference vectors for accurate dot product calculations
         normal_normalized = normal / np.linalg.norm(normal)
         reference_vector_normalized = reference_vector / np.linalg.norm(reference_vector)
-        
+
         # Calculate the dot product between the normal and the reference vector
         dot_product = np.dot(normal_normalized, reference_vector_normalized)
-        
+
         # Flip the normal if the dot product is negative
         if dot_product < 0:
             normal = -normal
@@ -288,12 +292,21 @@ class PointCloud:
         v = np.cross(a, b)
         c = np.dot(a, b)
         s = np.linalg.norm(v)
-        kmat = np.array([[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]])
-        rotation_matrix = np.eye(3) + kmat + kmat.dot(kmat) * ((1 - c) / (s ** 2))
-        
+
+        # Handle case where s is zero
+        if s == 0:
+            rotation_matrix = np.eye(3)
+        else:
+            kmat = np.array([[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]])
+            rotation_matrix = np.eye(3) + kmat + kmat.dot(kmat) * ((1 - c) / (s ** 2))
+
         # Rotate the points using the rotation matrix
         rotated_points = np.dot(rotation_matrix, points.T).T
-        
+
+        # Check for finite values in rotated points
+        if not np.all(np.isfinite(rotated_points)):
+            raise ValueError("Non-finite values after rotation")
+
         return rotated_points
     
     @staticmethod
@@ -306,31 +319,35 @@ class PointCloud:
 
     @staticmethod
     def fit_quadratic_surface(points):
-        a = points[:,0]
-        b = points[:,1]
-        c = points[:,2]
+        a = points[:, 0]
+        b = points[:, 1]
+        c = points[:, 2]
 
         def quadratic_surface(params, a, b):
             A, B, C, D, E, F = params
             return A*a**2 + B*b**2 + C*a*b + D*a + E*b + F
 
-        # Define the objective function for least squares (residuals)
         def objective_function(params, a, b, c):
             return quadratic_surface(params, a, b) - c
 
-        # Initial guess for the parameters
         initial_guess = np.ones(6)
 
-        # Perform least squares optimization
+        # Debugging outputs
+        if not np.all(np.isfinite(a)):
+            print(f"Non-finite values in a: {a}")
+        if not np.all(np.isfinite(b)):
+            print(f"Non-finite values in b: {b}")
+        if not np.all(np.isfinite(c)):
+            print(f"Non-finite values in c: {c}")
+
+        if not np.all(np.isfinite(a)) or not np.all(np.isfinite(b)) or not np.all(np.isfinite(c)):
+            raise ValueError("Non-finite values in points: a={}, b={}, c={}".format(a, b, c))
+
         result = least_squares(objective_function, initial_guess, args=(a, b, c))
+        if not result.success:
+            raise ValueError("Least squares optimization failed")
 
-        # The optimal parameters
-        params_optimal = result.x
-
-        # Unpack the optimal parameters
-        A, B, C, D, E, F = params_optimal
-
-        return A, B, C, D, E, F
+        return result.x
     
     @staticmethod
     def fit_implicit_quadric_surface(points):
