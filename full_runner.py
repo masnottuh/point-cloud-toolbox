@@ -126,9 +126,9 @@ def validate_shape(shape, theoretical_bending_energy, theoretical_stretching_ene
         mesh_path = "output_with_curvatures.ply"
         pcl.export_ply_with_curvature_and_normals('output_with_curvatures_and_normals.ply')
 
-        if not gaussian_curvature.size or not mean_curvature.size:
-            logging.error("Error: Curvature calculation failed or returned empty arrays.")
-            return
+        # if not gaussian_curvature.size or not mean_curvature.size:
+        #     logging.error("Error: Curvature calculation failed or returned empty arrays.")
+        #     return
 
         # Convert the points back to a PyVista mesh for further processing
         pv_mesh = pv.PolyData(np.loadtxt(temp_file_path))

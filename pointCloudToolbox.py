@@ -716,7 +716,7 @@ class PointCloud:
         points = self.points
         # normals = self.normals
         random_indexes = self.random_indexes
-        random_points = self.random_points
+        random_points = self.points[random_indexes]
 
         test_results = {}
 
@@ -773,7 +773,7 @@ class PointCloud:
         points = self.points
         # normals = self.normals
         random_indexes = self.random_indexes
-        random_points = self.random_points
+        # random_points = self.random_points
 
         test_results = {}
 
