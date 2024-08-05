@@ -95,49 +95,28 @@ def create_mesh_with_curvature(file_path, k_neighbors, shape, num_points=None):
 
     return temp_file_path, pv_mesh, ind
 
-def compute_face_areas(mesh):
-    logging.info(f"Mesh has {mesh.n_cells} faces")
+def compute_face_areas_and_centers(mesh):
+    logging.info(f"Mesh has {len(mesh.faces) // 4} faces")
 
-    # Compute areas of the triangular faces
+    # Compute areas and centers of the triangular faces
     faces = mesh.faces.reshape((-1, 4))[:, 1:4]
     points = mesh.points
     areas = np.zeros(faces.shape[0])
-
-    valid_faces = []
-
-    for i, face in enumerate(faces):
-        p1, p2, p3 = points[face]
-        area = 0.5 * np.linalg.norm(np.cross(p2 - p1, p3 - p1))
-        if area > 0:
-            areas[i] = area
-            valid_faces.append(i)
-
-    valid_faces = np.array(valid_faces)
-    logging.info(f"Computed {len(valid_faces)} valid face areas")
-    return areas, valid_faces
-
-def compute_face_centers(mesh):
-    faces = mesh.faces.reshape((-1, 4))[:, 1:4]
-    points = mesh.points
     centers = np.zeros((faces.shape[0], 3))
 
     for i, face in enumerate(faces):
         p1, p2, p3 = points[face]
+        areas[i] = 0.5 * np.linalg.norm(np.cross(p2 - p1, p3 - p1))
         centers[i] = (p1 + p2 + p3) / 3.0
 
-    return centers
+    logging.info(f"Computed {len(areas)} face areas")
+    logging.info(f"Computed {len(centers)} face centers")
+    return areas, centers
 
-def load_mesh_compute_energies(mesh, centers):
+def load_mesh_compute_energies(mesh, areas, centers):
     if mesh is None:
         logging.error("Mesh creation failed or no cells are present.")
         return 0, 0
-
-    # Compute face areas
-    areas, valid_faces = compute_face_areas(mesh)
-    if len(valid_faces) == 0:
-        logging.error("Error: No valid areas computed.")
-        return 0, 0
-    logging.info(f"Computed areas: {areas}")
 
     # Save the face centers to a temporary text file that PointCloud can read
     with tempfile.NamedTemporaryFile(delete=False, suffix='.txt') as temp_file:
@@ -182,18 +161,15 @@ def load_mesh_compute_energies(mesh, centers):
         logging.error("Error: No faces found in mesh.")
         return 0, 0
 
-    logging.info(f"Number of valid_faces: {len(valid_faces)}")
+    logging.info(f"Number of face centers: {len(centers)}")
     logging.info(f"Number of gaussian_curvature: {len(gaussian_curvature)}")
     logging.info(f"Number of mean_curvature: {len(mean_curvature)}")
 
-    for i, valid_face in enumerate(valid_faces):
-        face_gaussian[valid_face] = gaussian_curvature[i]
-        face_mean[valid_face] = mean_curvature[i]
+    face_gaussian[:len(gaussian_curvature)] = gaussian_curvature
+    face_mean[:len(mean_curvature)] = mean_curvature
 
     valid_indices = np.isfinite(face_gaussian) & np.isfinite(face_mean)
-    logging.info(f"Number of valid_indices: {np.sum(valid_indices)}")
-
-    valid_areas = areas[valid_faces][valid_indices]
+    valid_areas = areas[valid_indices]
     face_gaussian = face_gaussian[valid_indices]
     face_mean = face_mean[valid_indices]
 
@@ -204,11 +180,11 @@ def load_mesh_compute_energies(mesh, centers):
     # Visualize curvature values
     mesh.cell_data['gaussian_curvature'] = np.full(mesh.n_cells, np.nan)
     mesh.cell_data['mean_curvature_squared'] = np.full(mesh.n_cells, np.nan)
-    mesh.cell_data['gaussian_curvature'][valid_faces[valid_indices]] = face_gaussian
-    mesh.cell_data['mean_curvature_squared'][valid_faces[valid_indices]] = face_mean ** 2
+    mesh.cell_data['gaussian_curvature'][valid_indices] = face_gaussian
+    mesh.cell_data['mean_curvature_squared'][valid_indices] = face_mean ** 2
 
-    pv.plot(mesh, scalars='gaussian_curvature', title='Gaussian Curvature')
-    pv.plot(mesh, scalars='mean_curvature_squared', title='Mean Curvature Squared')
+    pv.plot(mesh, scalars='gaussian_curvature')
+    pv.plot(mesh, scalars='mean_curvature_squared')
 
     bending_energy = np.sum(face_mean ** 2 * valid_areas)
     stretching_energy = np.sum(face_gaussian * valid_areas)
@@ -216,26 +192,25 @@ def load_mesh_compute_energies(mesh, centers):
     # Visualize energy values
     mesh.cell_data['stretching_energy'] = np.zeros(mesh.n_cells)
     mesh.cell_data['bending_energy'] = np.zeros(mesh.n_cells)
-    mesh.cell_data['stretching_energy'][valid_faces[valid_indices]] = face_gaussian * valid_areas
-    mesh.cell_data['bending_energy'][valid_faces[valid_indices]] = face_mean ** 2 * valid_areas
+    mesh.cell_data['stretching_energy'][valid_indices] = face_gaussian * valid_areas
+    mesh.cell_data['bending_energy'][valid_indices] = face_mean ** 2 * valid_areas
 
-    pv.plot(mesh, scalars='stretching_energy', title='Stretching Energy')
-    pv.plot(mesh, scalars='bending_energy', title='Bending Energy')
+    pv.plot(mesh, scalars='stretching_energy')
+    pv.plot(mesh, scalars='bending_energy')
 
     return bending_energy, stretching_energy
-
 
 def validate_shape(shape, theoretical_bending_energy, theoretical_stretching_energy, file_path, k_neighbors, num_points=None):
     temp_file_path, pv_mesh, valid_indexes = create_mesh_with_curvature(file_path, k_neighbors, shape, num_points)
     if temp_file_path:
-        # Compute face centers
-        face_centers = compute_face_centers(pv_mesh)
+        # Compute face areas and centers
+        areas, face_centers = compute_face_areas_and_centers(pv_mesh)
 
         # Log the number of face centers
         logging.info(f"Number of face centers: {len(face_centers)}")
 
         # Compute energies using face centers
-        computed_bending_energy, computed_stretching_energy = load_mesh_compute_energies(pv_mesh, face_centers)
+        computed_bending_energy, computed_stretching_energy = load_mesh_compute_energies(pv_mesh, areas, face_centers)
         print(f"{shape} - Bending Energy: Theoretical={theoretical_bending_energy:.12f}, Computed={computed_bending_energy:.12f}")
         if theoretical_stretching_energy is not None:
             print(f"{shape} - Stretching Energy: Theoretical={theoretical_stretching_energy:.12f}, Computed={computed_stretching_energy:.12f}")
@@ -243,7 +218,6 @@ def validate_shape(shape, theoretical_bending_energy, theoretical_stretching_ene
             print(f"{shape} - Stretching Energy: Computed={computed_stretching_energy:.12f}")
     else:
         print(f"Failed to create or load mesh for {shape}.")
-
 
 def generate_torus(num_points, tube_radius, cross_section_radius):
     theta = np.linspace(0, 2 * np.pi, num_points)
@@ -258,7 +232,7 @@ def generate_torus(num_points, tube_radius, cross_section_radius):
 
 def generate_bumpy_plane(num_points, width, length, bump_height):
     x = np.linspace(-width / 2, width / 2, int(np.sqrt(num_points)))
-    y = np.linspace(-length / 2, length / 2, int(np.sqrt(num_points)))
+    y = np.linspace(-length / 2, length / length, int(np.sqrt(num_points)))
     x, y = np.meshgrid(x, y)
     z = bump_height * np.sin(np.pi * x / width) * np.cos(np.pi * y / length)
     points = np.vstack((x.flatten(), y.flatten(), z.flatten())).T
@@ -283,7 +257,7 @@ save_points_to_ply(torus_points, 'torus.ply')
 bumpy_plane_points = generate_bumpy_plane(num_points=10000, width=20, length=20, bump_height=2)
 save_points_to_ply(bumpy_plane_points, 'bumpy_plane.ply')
 
-validate_shape("1", 0, 0, '1_UState.asc', 85, num_points=10000)
+validate_shape("1", 0, 0, '1_UState.asc', 85, num_points=1000)
 validate_shape("2", 0, 0, '2_ValleyPropogation.asc', 85, num_points=10000)
 validate_shape("3", 0, 0, '3_SRidgesProp.asc', 85, num_points=10000)
 validate_shape("4", 0, 0, '4_SRidgeConverging.asc', 85, num_points=10000)
