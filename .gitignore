@@ -1,4 +1,10 @@
 #personal
+*.pickle
+*.csv
+*.png
+*.ply
+*.asc
+*.txt
 ./literature
 ./kong_toy_plots
 ./s-ridge_plots
