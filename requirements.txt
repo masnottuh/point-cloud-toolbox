@@ -1,5 +1,7 @@
-numpy
-scipy
 matplotlib
-sklearn
+numpy
+open3d
+pyvista
+pymesh
+scipy
 sympy
