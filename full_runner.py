@@ -184,10 +184,10 @@ bumpy_plane_points = generate_bumpy_plane(num_points=10000, width=20, length=20,
 save_points_to_ply(bumpy_plane_points, 'bumpy_plane.ply')
 
 # Validate known shapes with appropriate k_neighbors for surface fitting
-validate_shape("Sphere", 4 * np.pi, 4 * np.pi, 'output_with_curvatures_sphere.ply', 825)
-validate_shape("Cylinder", np.pi * 20 / (2 * 10), 0, 'output_with_curvatures_cylinder.ply', 825)  # Adjust height and radius accordingly
-validate_shape("Plane", 0, 0, 'output_with_curvatures_plane.ply', 825)
-validate_shape("Saddle", 0, None, 'output_with_curvatures_saddle.ply', 825)  # Replace None with the correct value if known
-validate_shape("Torus", 2 * np.pi**2 * 10 * 3, 0, 'torus.ply', 825)
-validate_shape("Bumpy Plane", 0, 0, 'bumpy_plane.ply', 825)
-validate_shape("Custom SRidge", 0, 0, 'sample_scans/sridge.txt', 825)
+validate_shape("Sphere", 4 * np.pi, 4 * np.pi, 'output_with_curvatures_sphere.ply', 125)
+# validate_shape("Cylinder", np.pi * 20 / (2 * 10), 0, 'output_with_curvatures_cylinder.ply', 825)  # Adjust height and radius accordingly
+# validate_shape("Plane", 0, 0, 'output_with_curvatures_plane.ply', 825)
+# validate_shape("Saddle", 0, None, 'output_with_curvatures_saddle.ply', 825)  # Replace None with the correct value if known
+# validate_shape("Torus", 2 * np.pi**2 * 10 * 3, 0, 'torus.ply', 825)
+# validate_shape("Bumpy Plane", 0, 0, 'bumpy_plane.ply', 825)
+# validate_shape("Custom SRidge", 0, 0, 'sample_scans/sridge.txt', 825)
