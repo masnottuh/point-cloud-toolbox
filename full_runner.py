@@ -6,14 +6,16 @@ import tempfile
 from pointCloudToolbox import PointCloud
 
 logging.basicConfig(level=logging.INFO)
-
+file_path = 'C:/Users/Lab PC/Desktop/Gavin_Fisher/PointCloudToolbox/torus.ply'
 def parse_ply(file_path):
+    logging.info("Inside parse_ply()")
     try:
         with open(file_path, 'r') as file:
             # Read header
             while True:
                 line = file.readline().strip()
                 if line == "end_header":
+                    logging.info(f"Removed header from PLY")
                     break
             # Read body data
             points = []
@@ -30,9 +32,11 @@ def parse_ply(file_path):
         return None
     except Exception as e:
         logging.error(f"Error parsing PLY file: {e}")
-        return None
+    logging.info("Exiting parse_ply()")
+
 
 def create_mesh_with_curvature(file_path, k_neighbors):
+    logging.info("Inside create_mesh_with_curvature()")
     points = parse_ply(file_path)
     if points is None:
         return None
@@ -53,21 +57,28 @@ def create_mesh_with_curvature(file_path, k_neighbors):
 
     # Perform Ball-Pivoting Algorithm (BPA) for mesh reconstruction
     logging.info("Using Ball-Pivoting Algorithm (BPA) for reconstruction...")
-    radii = [0.05, 0.1, 0.2]
+    radii = [1, 0.75, 0.5, 0.2, 0.05]
     mesh = o3d.geometry.TriangleMesh.create_from_point_cloud_ball_pivoting(pcd, o3d.utility.DoubleVector(radii))
     logging.info("BPA reconstruction completed. Number of vertices: %d", len(mesh.vertices))
 
     # Convert Open3D mesh to PyVista mesh
     pv_mesh = pv.PolyData(np.asarray(mesh.vertices), np.hstack([[3] + face.tolist() for face in np.asarray(mesh.triangles)]))
 
+    # Save the PyVista mesh to a file
+    output_file_path = "output_mesh.ply"  # Specify the desired output file path
+    pv_mesh.save("MESH_AFTER_BPA.ply")
+    logging.info("Saved MESH_AFTER_BPA.ply")
+    pv_mesh.plot(point_size=1, text='Mesh Made By BPA')    
+    
     # Save the vertices to a temporary text file that PointCloud can read
     with tempfile.NamedTemporaryFile(delete=False, suffix='.txt') as temp_file:
         np.savetxt(temp_file.name, pv_mesh.points)
         temp_file_path = temp_file.name
-
+    logging.info("exiting create_mesh_with_curvature()")
     return temp_file_path
 
 def load_mesh_compute_energies(mesh):
+    logging.info("Inside load_mesh_compute_energies()")
     if mesh is None:
         logging.error("Mesh creation failed or no cells are present.")
         return 0, 0
@@ -98,11 +109,15 @@ def load_mesh_compute_energies(mesh):
 
     bending_energy = np.sum(face_mean ** 2 * areas)
     stretching_energy = np.sum(face_gaussian * areas)
+    logging.info("Exiting load_mesh_compute_energies()")
 
-    return bending_energy, stretching_energy
+    return computed_bending_energy, computed_stretching_energy
 
 def validate_shape(shape, theoretical_bending_energy, theoretical_stretching_energy, file_path, k_neighbors):
+    logging.info("Inside validate_shape()")
     temp_file_path = create_mesh_with_curvature(file_path, k_neighbors)
+
+
     if temp_file_path:
         # Initialize PointCloud with the temporary text file
         pcl = PointCloud(temp_file_path, k_neighbors=k_neighbors)
@@ -123,12 +138,12 @@ def validate_shape(shape, theoretical_bending_energy, theoretical_stretching_ene
         pcl.plot_points_colored_by_quadratic_curvatures()
 
         print("saving to ply format")
-        mesh_path = "output_with_curvatures.ply"
+        # mesh_path = "output_with_curvatures.ply"
         pcl.export_ply_with_curvature_and_normals('output_with_curvatures_and_normals.ply')
 
-        # if not gaussian_curvature.size or not mean_curvature.size:
-        #     logging.error("Error: Curvature calculation failed or returned empty arrays.")
-        #     return
+        if not gaussian_curvature.size or not mean_curvature.size:
+            logging.error("Error: Curvature calculation failed or returned empty arrays.")
+            return
 
         # Convert the points back to a PyVista mesh for further processing
         pv_mesh = pv.PolyData(np.loadtxt(temp_file_path))
@@ -136,6 +151,7 @@ def validate_shape(shape, theoretical_bending_energy, theoretical_stretching_ene
         pv_mesh.point_data['mean_curvature'] = mean_curvature
 
         computed_bending_energy, computed_stretching_energy = load_mesh_compute_energies(pv_mesh)
+        
         print(f"{shape} - Bending Energy: Theoretical={theoretical_bending_energy:.12f}, Computed={computed_bending_energy:.12f}")
         if theoretical_stretching_energy is not None:
             print(f"{shape} - Stretching Energy: Theoretical={theoretical_stretching_energy:.12f}, Computed={computed_stretching_energy:.12f}")
@@ -145,7 +161,10 @@ def validate_shape(shape, theoretical_bending_energy, theoretical_stretching_ene
     else:
         print(f"Failed to create or load mesh for {shape}.")
 
+    logging.info("Exiting validate_shape()")
+
 def generate_torus(num_points, tube_radius, cross_section_radius):
+    logging.info("Inside generate_torus()")
     theta = np.linspace(0, 2 * np.pi, num_points)
     phi = np.linspace(0, 2 * np.pi, num_points)
     theta, phi = np.meshgrid(theta, phi)
@@ -154,17 +173,21 @@ def generate_torus(num_points, tube_radius, cross_section_radius):
     y = (tube_radius + cross_section_radius * np.cos(phi)) * np.sin(theta)
     z = cross_section_radius * np.sin(phi)
     points = np.vstack((x, y, z)).T
+    logging.info("Exiting generate_torus()")
     return points
 
 def generate_bumpy_plane(num_points, width, length, bump_height):
+    logging.info("Inside generate_bumpy_plane()")
     x = np.linspace(-width / 2, width / 2, int(np.sqrt(num_points)))
     y = np.linspace(-length / 2, length / 2, int(np.sqrt(num_points)))
     x, y = np.meshgrid(x, y)
     z = bump_height * np.sin(np.pi * x / width) * np.cos(np.pi * y / length)
     points = np.vstack((x.flatten(), y.flatten(), z.flatten())).T
+    logging.info("Exiting generate_bumpy_plane()")
     return points
 
 def save_points_to_ply(points, filename):
+    logging.info("Inside save_points_to_ply()")
     with open(filename, 'w') as f:
         f.write('ply\n')
         f.write('format ascii 1.0\n')
@@ -174,12 +197,13 @@ def save_points_to_ply(points, filename):
         f.write('property float z\n')
         f.write('end_header\n')
         np.savetxt(f, points, fmt='%.6f %.6f %.6f')
+    logging.info("Exiting save_points_to_ply()")
 
 # Generate and save a torus
-torus_points = generate_torus(num_points=10000, tube_radius=10, cross_section_radius=3)
+torus_points = generate_torus(num_points=300, tube_radius=10, cross_section_radius=3)
 save_points_to_ply(torus_points, 'torus.ply')
 
-# Generate and save a bumpy plane
+Generate and save a bumpy plane
 bumpy_plane_points = generate_bumpy_plane(num_points=10000, width=20, length=20, bump_height=2)
 save_points_to_ply(bumpy_plane_points, 'bumpy_plane.ply')
 
@@ -191,3 +215,4 @@ validate_shape("Sphere", 4 * np.pi, 4 * np.pi, 'output_with_curvatures_sphere.pl
 # validate_shape("Torus", 2 * np.pi**2 * 10 * 3, 0, 'torus.ply', 825)
 # validate_shape("Bumpy Plane", 0, 0, 'bumpy_plane.ply', 825)
 # validate_shape("Custom SRidge", 0, 0, 'sample_scans/sridge.txt', 825)
+
