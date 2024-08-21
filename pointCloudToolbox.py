@@ -104,10 +104,6 @@ class PointCloud:
         ax.set_ylabel('Y')
         ax.set_zlabel('Z')
         pickle.dump(fig, open(f'{self.output_path}point_cloud_k_{self.k_neighbors}_voxel_size_{self.voxel_size}.pickle', 'wb'))
-        # plt.show()
-        # ax.set_xlim3d(-max(self.points[:,0]), max(self.points[:,0]))
-        # ax.set_ylim3d(-max(self.points[:,1]), max(self.points[:,1]))
-        # plt.show()
 
     def rotate_point_cloud(self, rotation_angle_x, rotation_angle_y, rotation_angle_z):
 
