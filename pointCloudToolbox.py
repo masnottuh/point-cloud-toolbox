@@ -16,6 +16,7 @@ from scipy.optimize import minimize
 from scipy.linalg import svd
 import pymesh
 import pyvista as pv
+import os
 
 
 class PointCloud:
@@ -690,7 +691,7 @@ class PointCloud:
         self.normals = cloud.point_data['normals']
 
     def export_ply_with_curvature_and_normals(self, filename):
-        """Export the point cloud to a PLY file including normals and curvature data."""
+        """Export the point cloud to a PLY file including normals, curvatures, and face data."""
         if self.normals is None:
             self.compute_normals()
         
@@ -700,11 +701,23 @@ class PointCloud:
         cloud.point_data['gaussian_curvature'] = self.K_quadratic
         cloud.point_data['mean_curvature'] = self.H_quadratic
 
+        # Ensure faces are attached if they exist
+        if hasattr(self, 'faces') and self.faces is not None and len(self.faces) > 0:
+            # Flatten and reshape faces to match the PyVista format
+            flat_faces = np.hstack([[len(face)] + list(face) for face in self.faces])
+            cloud.faces = flat_faces
+            print(f"Number of Faces being added: {len(self.faces)}")
+        else:
+            print("No valid faces found, not adding face data to the PolyData object.")
+
         # Debugging: Check what's in point_data before saving
         print("Point Data Keys:", cloud.point_data.keys())
+        print("Number of Points:", len(self.points))
+        print("Number of Faces:", len(cloud.faces) if hasattr(cloud, 'faces') else 'No Faces')
 
         # Save the point cloud as a PLY file
         cloud.save(filename, binary=False)  # Use binary=False for ASCII format
+        print(f"Point cloud saved successfully in PLY format as {filename}")
 
 
 
@@ -753,7 +766,7 @@ class PointCloud:
             axx.set_xlabel('num neighbors')
             axx.set_ylabel('Gaussian Curvature (quadratic fit)')
             axx.scatter(test_results[point[0]]['neighbors'],test_results[point[0]]['gaussian'], c='b', s=2)
-            
+            figy.show()
             pickle.dump(figy, open(f'{self.output_path}Gaussian Curvature {i} study, Voxel Size = {self.voxel_size}.pickle', 'wb'))
 
             figz = plt.figure()
@@ -762,7 +775,7 @@ class PointCloud:
             axxa.set_xlabel('num neighbors')
             axxa.set_ylabel('Mean Curvature (quadratic fit)')
             axxa.scatter(test_results[point[0]]['neighbors'],test_results[point[0]]['mean'], c='b', s=2)
-            
+            figz.show()
             pickle.dump(figz, open(f'{self.output_path}Mean Curvature study, Voxel Size = {self.voxel_size} {i}.pickle', 'wb'))
 
     def implicit_quadric_neighbor_study(self):
