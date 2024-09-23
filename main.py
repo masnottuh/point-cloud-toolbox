@@ -7,10 +7,12 @@ import os
 ##################################
 logging.basicConfig(level=logging.INFO)
 ##################################
-import sys
-sys.setrecursionlimit(10**9) 
-
+output_dir = './output' #Gotta have output dir to avoid err with plot_points... functions
+if not os.path.exists(output_dir):
+    os.makedirs(output_dir)
 # Create test shapes
+
+
 shapes =  generate_pv_shapes(num_points=10000, perturbation_strength=0.05)
 
 # List of shape names corresponding to the shapes generated
@@ -32,4 +34,6 @@ files = [os.path.join(file_directory, file) for file in os.listdir(file_director
 
 for file in files:
     validate_shape(str(file))
-    
+    print("MAIN DONE")
+
+
