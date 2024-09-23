@@ -51,13 +51,13 @@ def create_mesh_with_curvature(file_path):
         # mesh = o3d.t.geometry.TriangleMesh.from_legacy(mesh).fill_holes(hole_size=100*radii_list[1]).to_legacy()
         # logging.info("BPA reconstruction completed. Number of vertices: %d", len(mesh.vertices))
         logging.info("Using Open3D to show mesh...")
-        o3d.visualization.draw_geometries([mesh], mesh_show_back_face=True, mesh_show_wireframe=True)
+        o3d.visualization.draw_geometries([mesh], mesh_show_back_face=True, mesh_show_wireframe=True, window_name=file_path)
         # Convert Open3D mesh to PyVista mesh
         logging.info("Placing faces and vertices into new pv Mesh...")
         pv_mesh = pv.PolyData(np.asarray(mesh.vertices), np.hstack([[3] + face.tolist() for face in np.asarray(mesh.triangles)]))
             
         # Save the vertices to a temporary text file that PointCloud can read
-        logging.info("temp save mesh...")
+        logging.info("Temporarily saving PVmesh...")
         with tempfile.NamedTemporaryFile(delete=False, suffix='.txt') as temp_file:
             np.savetxt(temp_file.name, pv_mesh.points)
             temp_file_path = temp_file.name
@@ -113,7 +113,9 @@ def validate_shape(file_path):
         pcl.plant_kdtree(k_neighbors=100)  # Ensure the KD-Tree is planted
 
         print("Running neighbor study")
-        pcl.explicit_quadratic_neighbor_study()
+        converged_neighbors_int = pcl.explicit_quadratic_neighbor_study()
+        print(f"Converged Num of neighbors from explicit_quadratic_neighbor_study is {converged_neighbors_int}")
+       
 
         print("Calculating quadratic surfaces")
         pcl.fit_explicit_quadratic_surfaces_to_neighborhoods()
@@ -417,6 +419,7 @@ def parse_ply(file_path):
                 parts = line.split()
                 x, y, z = map(float, parts[:3])
                 points.append([x, y, z])
+        logging.info("Assigned points from .ply to np array")
         return np.array(points)
     except FileNotFoundError:
         print(f"File not found: {file_path}")
