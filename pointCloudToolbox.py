@@ -5,7 +5,6 @@
 ########################################################################
 import numpy as np
 import matplotlib.pyplot as plt
-import matplotlib.pyplot as plt
 import scipy as sp
 from scipy.linalg import eigh
 import sympy as sympy
@@ -17,7 +16,8 @@ from scipy.linalg import svd
 import pymesh
 import pyvista as pv
 import os
-
+import pandas as pd
+import logging
 
 class PointCloud:
 
@@ -601,7 +601,7 @@ class PointCloud:
         plt.title(f'Hist Mean Curvature from quadratic surface, K = {self.k_neighbors}, Voxel Size = {self.voxel_size}')
         plt.tight_layout()
         pickle.dump(fig_hist_H_fund, open(f'{self.output_path}Hist Mean Curvature from quadratic surface, K = {self.k_neighbors}, Voxel Size = {self.voxel_size}.pickle', 'wb'))
-
+        plt.close()
         # plot(self.points, c=np.array(self.K_quadratic), shading={"point_size": 10.0})
         # plot(self.points, c=np.array(self.H_quadratic), shading={"point_size": 10.0})
         # mp.subplot(self.points, c=np.random.rand(*v.shape), s=[1, 2, 1], data=d, shading={"point_size": 0.03})
@@ -721,13 +721,18 @@ class PointCloud:
 
 
 
+   
+
     def explicit_quadratic_neighbor_study(self):
+        logging.info("Inside explicit_quadratic_neighbor_study()")
         points = self.points
-        # normals = self.normals
+
+        self.random_indexes = np.random.randint(0, len(self.points), len(self.points)//6)
         random_indexes = self.random_indexes
         random_points = self.points[random_indexes]
 
         test_results = {}
+        explicit_converged_neighbors = []
 
         for i, point in enumerate(random_points):
             test_results[point[0]] = {}
@@ -738,7 +743,7 @@ class PointCloud:
             test_results[point[0]]['neighbors'] = []
 
             error_points = 0
-            for num_neighbors in range(3, 100):
+            for num_neighbors in range(3, 99):
                 neighbor_inds = self.kdtree.query(point, num_neighbors+1)[1]
                 points = self.points[neighbor_inds]
                 centered_points = points - point
@@ -747,6 +752,7 @@ class PointCloud:
                 try:
                     coefs = self.fit_quadratic_surface(points)
                 except:
+                    logging.info("Fitting EQNS Failure")
                     error_points+=1
                     coefs = 0, 0, 0, 0, 0, 0
                 
@@ -758,25 +764,47 @@ class PointCloud:
                 test_results[point[0]]['mean'].append(K_h)
                 test_results[point[0]]['principal_1'].append(k1)
                 test_results[point[0]]['principal_2'].append(k2)
-            print(f'error point in neighbor hunt only (k = {num_neighbors}))')
-            #plot test results
-            figy = plt.figure()
-            axx = figy.add_subplot(1, 1, 1)
-            axx.set_title(f'Neighbor Test, Voxel Size = {self.voxel_size}, pcl has total of {len(self.points[:,0])} points')
-            axx.set_xlabel('num neighbors')
-            axx.set_ylabel('Gaussian Curvature (quadratic fit)')
-            axx.scatter(test_results[point[0]]['neighbors'],test_results[point[0]]['gaussian'], c='b', s=2)
-            figy.show()
-            pickle.dump(figy, open(f'{self.output_path}Gaussian Curvature {i} study, Voxel Size = {self.voxel_size}.pickle', 'wb'))
+    
+                if len(test_results[point[0]]['principal_1']) > 1:  #Have to skip first iteration
+                    principal_1_current = test_results[point[0]]['principal_1'][-1]  
+                    principal_1_previous = test_results[point[0]]['principal_1'][-2]  
 
-            figz = plt.figure()
-            axxa = figz.add_subplot(1, 1, 1)
-            axxa.set_title(f'Neighbor Test, Voxel Size = {self.voxel_size}, pcl has total of {len(self.points[:,0])} points')
-            axxa.set_xlabel('num neighbors')
-            axxa.set_ylabel('Mean Curvature (quadratic fit)')
-            axxa.scatter(test_results[point[0]]['neighbors'],test_results[point[0]]['mean'], c='b', s=2)
-            figz.show()
-            pickle.dump(figz, open(f'{self.output_path}Mean Curvature study, Voxel Size = {self.voxel_size} {i}.pickle', 'wb'))
+                    
+                    difference = abs(round(principal_1_current - principal_1_previous))
+                    
+                    if difference < 1e-5:
+                        explicit_converged_neighbors.append(num_neighbors)
+                        break
+
+                    else:
+                        pass    
+
+        converged_neighbors_int = (sum(explicit_converged_neighbors)//len(explicit_converged_neighbors)) + 1 #Plus one cause int div rounds down 
+        return converged_neighbors_int
+
+            #To Sam: THESE PLOTTING FEATURES WERE HERE BEFORE BUT I DONT KNOW HOW TO USE IT -Gavin
+
+            #plot test results
+            # figy = plt.figure()
+            # axx = figy.add_subplot(1, 1, 1)
+            # axx.set_title(f'Neighbor Test, Voxel Size = {self.voxel_size}, pcl has total of {len(self.points[:,0])} points')
+            # axx.set_xlabel('num neighbors')
+            # axx.set_ylabel('Gaussian Curvature (quadratic fit)')
+            # axx.scatter(test_results[point[0]]['neighbors'],test_results[point[0]]['gaussian'], c='b', s=2)
+            # plt.text(x=1,y=1,s=f'{file_path}')
+            # figy.show()
+            # pickle.dump(figy, open(f'{self.output_path}Gaussian Curvature {i} study, Voxel Size = {self.voxel_size}.pickle', 'wb'))
+
+            # figz = plt.figure()
+            # axxa = figz.add_subplot(1, 1, 1)
+            # axxa.set_title(f'Neighbor Test, Voxel Size = {self.voxel_size}, pcl has total of {len(self.points[:,0])} points')
+            # axxa.set_xlabel('num neighbors')
+            # axxa.set_ylabel('Mean Curvature (quadratic fit)')
+            # axxa.scatter(test_results[point[0]]['neighbors'],test_results[point[0]]['mean'], c='b', s=2)
+            # plt.text(x=1,y=1,s=f'{file_path}')
+            # figz.show()
+            # pickle.dump(figz, open(f'{self.output_path}Mean Curvature study, Voxel Size = {self.voxel_size} {i}.pickle', 'wb'))
+
 
     def implicit_quadric_neighbor_study(self):
         points = self.points

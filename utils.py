@@ -21,31 +21,43 @@ def create_mesh_with_curvature(file_path):
         # Estimate normals
         logging.info("Estimating normals...")
         pcd.estimate_normals(search_param=o3d.geometry.KDTreeSearchParamHybrid(radii_list[0], len(pcd.points)//100))
+        logging.info("Normalize normals...")
         pcd.normalize_normals()
 
+        logging.info("Establishing Radii list...")
         radii = radii_list
+        
+        logging.info("Moving np array to pv.PolyData...")
         cloud = pv.PolyData(np.array(pcd.points))
-
+        logging.info("Meshing by reconstructing surface...")
         mesh = cloud.reconstruct_surface()
         
         # Extract the vertices and faces from the PyVista mesh
+        logging.info("Extracting vertices...")
         vertices = np.array(mesh.points)
+        logging.info("Extracting Faces...")
         faces = np.array(mesh.faces).reshape((-1, 4))[:, 1:]
 
         # Create an Open3D mesh
+        logging.info("Opening Open3D Mesh...")
         mesh = o3d.geometry.TriangleMesh()
+        logging.info("Placing vertices into Open3D Mesh...")
         mesh.vertices = o3d.utility.Vector3dVector(vertices)
+        logging.info("Placing faces into Open3D Mesh...")
         mesh.triangles = o3d.utility.Vector3iVector(faces)
         # mesh = o3d.geometry.TriangleMesh.create_from_point_cloud_ball_pivoting(pcd, o3d.utility.DoubleVector(radii))
         
 
         # mesh = o3d.t.geometry.TriangleMesh.from_legacy(mesh).fill_holes(hole_size=100*radii_list[1]).to_legacy()
-        logging.info("BPA reconstruction completed. Number of vertices: %d", len(mesh.vertices))
-        o3d.visualization.draw_geometries([mesh], mesh_show_back_face=True, mesh_show_wireframe=True)
+        # logging.info("BPA reconstruction completed. Number of vertices: %d", len(mesh.vertices))
+        logging.info("Using Open3D to show mesh...")
+        o3d.visualization.draw_geometries([mesh], mesh_show_back_face=True, mesh_show_wireframe=True, window_name=file_path)
         # Convert Open3D mesh to PyVista mesh
+        logging.info("Placing faces and vertices into new pv Mesh...")
         pv_mesh = pv.PolyData(np.asarray(mesh.vertices), np.hstack([[3] + face.tolist() for face in np.asarray(mesh.triangles)]))
             
         # Save the vertices to a temporary text file that PointCloud can read
+        logging.info("Temporarily saving PVmesh...")
         with tempfile.NamedTemporaryFile(delete=False, suffix='.txt') as temp_file:
             np.savetxt(temp_file.name, pv_mesh.points)
             temp_file_path = temp_file.name
@@ -101,7 +113,9 @@ def validate_shape(file_path):
         pcl.plant_kdtree(k_neighbors=100)  # Ensure the KD-Tree is planted
 
         print("Running neighbor study")
-        pcl.explicit_quadratic_neighbor_study()
+        converged_neighbors_int = pcl.explicit_quadratic_neighbor_study()
+        print(f"Converged Num of neighbors from explicit_quadratic_neighbor_study is {converged_neighbors_int}")
+       
 
         print("Calculating quadratic surfaces")
         pcl.fit_explicit_quadratic_surfaces_to_neighborhoods()
@@ -405,9 +419,11 @@ def parse_ply(file_path):
                 parts = line.split()
                 x, y, z = map(float, parts[:3])
                 points.append([x, y, z])
+        logging.info("Assigned points from .ply to np array")
         return np.array(points)
     except FileNotFoundError:
         print(f"File not found: {file_path}")
         return None
     except Exception as e:
         print(f"Error parsing PLY file: {e}")
+
