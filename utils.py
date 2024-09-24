@@ -80,12 +80,16 @@ def average_distance_using_kd_tree(pcd):
     total_pairs = 0
     K = 2
 
+
     for i in range(500):
-        # Query the K nearest neighbors, including the point itself
-        distances, _ = tree.query(random.choice(points), k=K)
+        # Select a random point from the points array
+        random_point = random.choice(points.tolist())
+        
+        # Query the K nearest neighbors for the selected point
+        distances, _ = tree.query(random_point, k=K)
+        
         # Exclude the distance to itself (which is always 0)
         distance = distances[1]
-        # print(distance)
         
         total_distance += distance
         total_pairs += 1
