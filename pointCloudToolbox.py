@@ -764,18 +764,16 @@ class PointCloud:
                 test_results[point[0]]['mean'].append(K_h)
                 test_results[point[0]]['principal_1'].append(k1)
                 test_results[point[0]]['principal_2'].append(k2)
-    
-                if len(test_results[point[0]]['principal_1']) > 1:  #Have to skip first iteration
-                    principal_1_current = test_results[point[0]]['principal_1'][-1]  
-                    principal_1_previous = test_results[point[0]]['principal_1'][-2]  
 
-                    
+                # width_of_window = 24 #max of num_neighbors//4 
+    
+                if len(test_results[point[0]]['gaussian']) > 7:  #Have to skip first iteration
+                    principal_1_current = test_results[point[0]]['gaussian'][-1]  #Using gaussian to ensure convergence in principal_1 and p2 directions
+                    principal_1_previous = test_results[point[0]]['gaussian'][-6]  
                     difference = abs(round(principal_1_current - principal_1_previous))
-                    
                     if difference < 1e-5:
                         explicit_converged_neighbors.append(num_neighbors)
                         break
-
                     else:
                         pass    
 
@@ -989,9 +987,3 @@ class PointCloud:
 
 
         # plt.show()
-
-
-
-
-
-
