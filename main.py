@@ -15,15 +15,15 @@ if not os.path.exists(output_dir):
 if not os.path.exists(test_shapes_dir):
     os.makedirs(test_shapes_dir)
 
-    
+
 # Create test shapes
 
 
-shapes =  generate_pv_shapes(num_points=10000, perturbation_strength=0.05)
+shapes =  generate_pv_shapes(num_points=1000, perturbation_strength=0.00)
 
 # List of shape names corresponding to the shapes generated
-shape_names = ["plane", "plane_perturbed", "sphere", "sphere_perturbed", "cylinder",
- "cylinder_perturbed", "torus", "torus_perturbed", "egg_carton", "egg_carton_perturbed", "1st_unbind_9_3_2024.ply", "4th_sridge_9_5_2024.ply"]
+shape_names = ["sphere", "sphere_perturbed", "cylinder",
+ "cylinder_perturbed", "torus", "torus_perturbed", "egg_carton", "egg_carton_perturbed"]
 
 # Iterate over the shapes and save points as .ply with descriptive filenames
 for shape, shape_names in zip(shapes, shape_names):
