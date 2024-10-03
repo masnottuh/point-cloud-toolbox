@@ -767,7 +767,7 @@ class PointCloud:
 
                 # width_of_window = 24 #max of num_neighbors//4 
     
-                if len(test_results[point[0]]['gaussian']) > 7:  #Have to skip first iteration
+                if len(test_results[point[0]]['gaussian']) > 20:  #Have to skip first iteration
                     principal_1_current = test_results[point[0]]['gaussian'][-1]  #Using gaussian to ensure convergence in principal_1 and p2 directions
                     principal_1_previous = test_results[point[0]]['gaussian'][-6]  
                     difference = abs(round(principal_1_current - principal_1_previous))
