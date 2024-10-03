@@ -255,7 +255,7 @@ def validate_shape(file_path):
         plt.show()
 
         # Define Z-score threshold for filtering (e.g., 3 standard deviations)
-        z_threshold = 3
+        z_threshold = 5
 
         # Calculate Z-scores for Gaussian curvature and filter outliers
         gaussian_z_scores = np.abs((gaussian_curvature - np.mean(gaussian_curvature)) / np.std(gaussian_curvature))
@@ -267,7 +267,7 @@ def validate_shape(file_path):
 
         # Plot filtered distribution of Gaussian curvature
         plt.figure(figsize=(10, 5))
-        plt.hist(gaussian_filtered[~np.isnan(gaussian_filtered)], bins=100, color='blue', alpha=0.7, label='Filtered Gaussian Curvature')
+        plt.hist(gaussian_filtered[~np.isnan(gaussian_filtered)], bins=1000, color='blue', alpha=0.7, label='Filtered Gaussian Curvature')
         plt.title('Filtered Distribution of Gaussian Curvature')
         plt.xlabel('Gaussian Curvature')
         plt.ylabel('Frequency')
@@ -276,7 +276,7 @@ def validate_shape(file_path):
 
         # Plot filtered distribution of Mean curvature squared
         plt.figure(figsize=(10, 5))
-        plt.hist(mean_curvature_squared_filtered[~np.isnan(mean_curvature_squared_filtered)], bins=100, color='orange', alpha=0.7, label='Filtered Mean Curvature Squared')
+        plt.hist(mean_curvature_squared_filtered[~np.isnan(mean_curvature_squared_filtered)], bins=1000, color='orange', alpha=0.7, label='Filtered Mean Curvature Squared')
         plt.title('Filtered Distribution of Mean Curvature Squared')
         plt.xlabel('Mean Curvature Squared')
         plt.ylabel('Frequency')
@@ -290,8 +290,8 @@ def validate_shape(file_path):
         # Calculate mean and standard deviation for Gaussian curvature
         gaussian_mean = np.mean(gaussian_curvature)
         gaussian_std = np.std(gaussian_curvature)
-        gaussian_min = gaussian_mean - gaussian_std
-        gaussian_max = gaussian_mean + gaussian_std
+        gaussian_min = np.min(gaussian_filtered)
+        gaussian_max = np.max(gaussian_filtered)
 
         # Set color scale limits to 1 standard deviation from the mean
         gaussian_clim = [gaussian_min, gaussian_max]
@@ -299,8 +299,8 @@ def validate_shape(file_path):
         # Calculate mean and standard deviation for Mean curvature squared
         mean_curvature_squared_mean = np.mean(mean_curvature_squared)
         mean_curvature_squared_std = np.std(mean_curvature_squared)
-        mean_min = mean_curvature_squared_mean - mean_curvature_squared_std
-        mean_max = mean_curvature_squared_mean + mean_curvature_squared_std
+        mean_min = np.min(mean_curvature_squared_filtered)
+        mean_max = np.max(mean_curvature_squared_filtered)
 
         # Set color scale limits to 1 standard deviation from the mean
         mean_clim = [mean_min, mean_max]
