@@ -15,10 +15,7 @@ if not os.path.exists(output_dir):
 if not os.path.exists(test_shapes_dir):
     os.makedirs(test_shapes_dir)
 
-
 # Create test shapes
-
-
 shapes =  generate_pv_shapes(num_points=1000, perturbation_strength=0.00)
 
 # List of shape names corresponding to the shapes generated

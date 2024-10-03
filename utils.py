@@ -39,9 +39,9 @@ def create_mesh_with_curvature(file_path):
     logging.info("Creating multiple BPA meshes with rotations on multiple axes...")
     meshes = []
     # Generate 5 increments between 0 and pi
-    incrementsX = np.linspace(0, 0.25*np.pi, 2)
-    incrementsY = np.linspace(0, 0.25*np.pi, 2)
-    incrementsZ = np.linspace(0, np.pi, 20)
+    incrementsX = np.linspace(0, np.pi, 5)
+    incrementsY = np.linspace(0, np.pi, 5)
+    incrementsZ = np.linspace(0, np.pi, 5)
 
     # Create combinations of these increments for rotation around X, Y, and Z axes
     rotation_axes = list(itertools.product(incrementsX, incrementsY, incrementsZ))
@@ -99,7 +99,7 @@ def create_mesh_with_curvature(file_path):
     pv_mesh = pv.PolyData(vertices, np.hstack([[3] + face.tolist() for face in faces]))
 
     # fill remaining holes
-    pv_mesh = pv_mesh.fill_holes(3*radii_list[-1])
+    pv_mesh = pv_mesh.fill_holes(5*radii_list[-1])
 
     # Save vertices to a temporary text file
     logging.info("Saving PyVista mesh vertices to temporary file...")
@@ -144,7 +144,7 @@ def average_distance_using_kd_tree(pcd):
 
     average_distance = total_distance / total_pairs if total_pairs > 0 else 0
     
-    radii_list = np.linspace(0.25*average_distance,10*average_distance,10)
+    radii_list = np.linspace(0.1*average_distance,15*average_distance,5)
 
     return {'average_distance': average_distance,
             'total_pairs': total_pairs,
@@ -234,11 +234,64 @@ def validate_shape(file_path):
         print(f'computed bending energy: {computed_bending_energy}')
         print(f'computed stretching energy: {computed_stretching_energy}')
 
+        plt.clf()
+        plt.close()
+        # Plot original distribution of Gaussian curvature
+        plt.figure(figsize=(10, 5))
+        plt.hist(gaussian_curvature, bins=100, color='blue', alpha=0.7, label='Gaussian Curvature')
+        plt.title('Original Distribution of Gaussian Curvature')
+        plt.xlabel('Gaussian Curvature')
+        plt.ylabel('Frequency')
+        plt.legend()
+        plt.show()
+
+        # Plot original distribution of Mean curvature squared
+        plt.figure(figsize=(10, 5))
+        plt.hist(mean_curvature_squared, bins=100, color='orange', alpha=0.7, label='Mean Curvature Squared')
+        plt.title('Original Distribution of Mean Curvature Squared')
+        plt.xlabel('Mean Curvature Squared')
+        plt.ylabel('Frequency')
+        plt.legend()
+        plt.show()
+
+        # Define Z-score threshold for filtering (e.g., 3 standard deviations)
+        z_threshold = 2
+
+        # Calculate Z-scores for Gaussian curvature and filter outliers
+        gaussian_z_scores = np.abs((gaussian_curvature - np.mean(gaussian_curvature)) / np.std(gaussian_curvature))
+        gaussian_filtered = np.where(gaussian_z_scores > z_threshold, np.nan, gaussian_curvature)
+
+        # Calculate Z-scores for Mean curvature squared and filter outliers
+        mean_curvature_squared_z_scores = np.abs((mean_curvature_squared - np.mean(mean_curvature_squared)) / np.std(mean_curvature_squared))
+        mean_curvature_squared_filtered = np.where(mean_curvature_squared_z_scores > z_threshold, np.nan, mean_curvature_squared)
+
+        # Plot filtered distribution of Gaussian curvature
+        plt.figure(figsize=(10, 5))
+        plt.hist(gaussian_filtered[~np.isnan(gaussian_filtered)], bins=100, color='blue', alpha=0.7, label='Filtered Gaussian Curvature')
+        plt.title('Filtered Distribution of Gaussian Curvature')
+        plt.xlabel('Gaussian Curvature')
+        plt.ylabel('Frequency')
+        plt.legend()
+        plt.show()
+
+        # Plot filtered distribution of Mean curvature squared
+        plt.figure(figsize=(10, 5))
+        plt.hist(mean_curvature_squared_filtered[~np.isnan(mean_curvature_squared_filtered)], bins=100, color='orange', alpha=0.7, label='Filtered Mean Curvature Squared')
+        plt.title('Filtered Distribution of Mean Curvature Squared')
+        plt.xlabel('Mean Curvature Squared')
+        plt.ylabel('Frequency')
+        plt.legend()
+        plt.show()
+
+        # Replace outliers in original mesh with NaN
+        pv_mesh.point_data['gaussian_curvature'] = gaussian_filtered
+        pv_mesh.point_data['mean_curvature_squared'] = mean_curvature_squared_filtered
+
         # Calculate mean and standard deviation for Gaussian curvature
         gaussian_mean = np.mean(gaussian_curvature)
         gaussian_std = np.std(gaussian_curvature)
-        gaussian_min = gaussian_mean - 2*gaussian_std
-        gaussian_max = gaussian_mean + 2*gaussian_std
+        gaussian_min = gaussian_mean - gaussian_std
+        gaussian_max = gaussian_mean + gaussian_std
 
         # Set color scale limits to 1 standard deviation from the mean
         gaussian_clim = [gaussian_min, gaussian_max]
@@ -246,8 +299,8 @@ def validate_shape(file_path):
         # Calculate mean and standard deviation for Mean curvature squared
         mean_curvature_squared_mean = np.mean(mean_curvature_squared)
         mean_curvature_squared_std = np.std(mean_curvature_squared)
-        mean_min = mean_curvature_squared_mean - 2*mean_curvature_squared_std
-        mean_max = mean_curvature_squared_mean + 2*mean_curvature_squared_std
+        mean_min = mean_curvature_squared_mean - mean_curvature_squared_std
+        mean_max = mean_curvature_squared_mean + mean_curvature_squared_std
 
         # Set color scale limits to 1 standard deviation from the mean
         mean_clim = [mean_min, mean_max]

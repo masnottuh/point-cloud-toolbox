@@ -100,6 +100,6 @@ def convert_asc_to_ply(asc_directory, ply_directory, downsample_fraction=0.1):
 # Example usage:
 asc_directory = './Scans'  # Directory containing .asc files
 ply_directory = './test_shapes'  # Directory to save .ply files
-voxel_size_for_downsample = 0.001
+voxel_size_for_downsample = 0.1
 
 convert_asc_to_ply(asc_directory, ply_directory, voxel_size_for_downsample)
