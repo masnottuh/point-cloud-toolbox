@@ -238,7 +238,7 @@ def validate_shape(file_path):
         plt.close()
         # Plot original distribution of Gaussian curvature
         plt.figure(figsize=(10, 5))
-        plt.hist(gaussian_curvature, bins=100, color='blue', alpha=0.7, label='Gaussian Curvature')
+        plt.hist(gaussian_curvature, bins=1000, color='blue', alpha=0.7, label='Gaussian Curvature')
         plt.title('Original Distribution of Gaussian Curvature')
         plt.xlabel('Gaussian Curvature')
         plt.ylabel('Frequency')
@@ -247,7 +247,7 @@ def validate_shape(file_path):
 
         # Plot original distribution of Mean curvature squared
         plt.figure(figsize=(10, 5))
-        plt.hist(mean_curvature_squared, bins=100, color='orange', alpha=0.7, label='Mean Curvature Squared')
+        plt.hist(mean_curvature_squared, bins=1000, color='orange', alpha=0.7, label='Mean Curvature Squared')
         plt.title('Original Distribution of Mean Curvature Squared')
         plt.xlabel('Mean Curvature Squared')
         plt.ylabel('Frequency')
@@ -255,7 +255,7 @@ def validate_shape(file_path):
         plt.show()
 
         # Define Z-score threshold for filtering (e.g., 3 standard deviations)
-        z_threshold = 2
+        z_threshold = 3
 
         # Calculate Z-scores for Gaussian curvature and filter outliers
         gaussian_z_scores = np.abs((gaussian_curvature - np.mean(gaussian_curvature)) / np.std(gaussian_curvature))
