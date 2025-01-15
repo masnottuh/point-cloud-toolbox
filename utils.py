@@ -9,7 +9,6 @@ from pointCloudToolbox import *
 import copy
 import itertools
 
-
 def create_mesh_with_curvature(file_path):
     logging.info("Inside create_mesh_with_curvature()")
 
@@ -76,6 +75,7 @@ def create_mesh_with_curvature(file_path):
     # Post-process the merged mesh: Remove degenerate and non-manifold elements
     logging.info("Post-processing mesh: removing degenerate triangles and non-manifold edges...")
     final_mesh.remove_degenerate_triangles()
+    final_mesh.remove_duplicated_triangles()
     final_mesh.remove_duplicated_vertices()
     final_mesh.remove_non_manifold_edges()
 
@@ -305,11 +305,21 @@ def validate_shape(file_path):
         # Set color scale limits to 1 standard deviation from the mean
         mean_clim = [mean_min, mean_max]
 
+        sargs = dict(
+        title_font_size=20,
+        label_font_size=16,
+        shadow=True,
+        n_labels=3,
+        italic=True,
+        fmt="%.6f",
+        font_family="arial",
+        )
+
         # Plot Gaussian curvature with color scale limits set to 1 std deviation from mean
-        pv_mesh.plot(show_edges=False, scalars='gaussian_curvature', cmap='viridis', clim=gaussian_clim)
+        pv_mesh.plot(show_edges=False, scalars='gaussian_curvature', cmap='viridis', clim=gaussian_clim, scalar_bar_args=sargs)
 
         # Plot Mean curvature squared with color scale limits set to 1 std deviation from mean
-        pv_mesh.plot(show_edges=False, scalars='mean_curvature_squared', cmap='plasma', clim=mean_clim)
+        pv_mesh.plot(show_edges=False, scalars='mean_curvature_squared', cmap='plasma', clim=mean_clim, scalar_bar_args=sargs)
 
 
 
@@ -461,25 +471,28 @@ def generate_pv_shapes(num_points=10000, perturbation_strength=0.0):
     sphere_points = generate_sphere_points(num_points)
     sphere = pv.PolyData(sphere_points)
     sphere_perturbed = pv.PolyData(perturb_points(sphere_points, perturbation_strength))
-    print(f'theoretical sphere surface area: {4 * 3.14159 * 10**2}')
+    print(f'theoretical sphere surface area: {4.0 * 3.14159 * (10.0**2.0)}')
 
     cylinder_points = generate_cylinder_points(num_points)
     cylinder = pv.PolyData(cylinder_points)
     cylinder_perturbed = pv.PolyData(perturb_points(cylinder_points, perturbation_strength))
-    print(f'theoretical cylinder surface area: {2 * 3.14159 * 5 * 10}')
+    print(f'theoretical cylinder surface area: {(2.0 * (3.14159 * 5.0)) * 10.0}')
 
     torus_points = generate_torus_points(num_points)
     torus = pv.PolyData(torus_points)
     torus_perturbed = pv.PolyData(perturb_points(torus_points, perturbation_strength))
-    print(f'theoretical torus surface area: {(2 * 3.14159 * 10) * (2 * 3.14159 * 3)}')
+    print(f'theoretical torus surface area: {(2.0 * 3.14159 * 10.0) * (2.0 * 3.14159 * 3.0)}')
 
     egg_carton_points = generate_egg_carton_points(num_points)
     egg_carton = pv.PolyData(egg_carton_points)
     egg_carton_perturbed = pv.PolyData(perturb_points(egg_carton_points, perturbation_strength))
 
+    # Return all generated shapes
     return (sphere, sphere_perturbed,
-            cylinder, cylinder_perturbed, torus, torus_perturbed,
+            cylinder, cylinder_perturbed, 
+            torus, torus_perturbed,
             egg_carton, egg_carton_perturbed)
+
 
 def save_points_to_ply(points, filename):  
     with open(filename, 'w') as f:
