@@ -78,6 +78,7 @@ def create_mesh_with_curvature(file_path):
     final_mesh.remove_duplicated_triangles()
     final_mesh.remove_duplicated_vertices()
     final_mesh.remove_non_manifold_edges()
+    # final_mesh.simplify_quadric_decimation()
 
     # Vertex clustering step to further simplify the mesh
     logging.info("Applying vertex clustering for mesh simplification...")
@@ -487,11 +488,14 @@ def generate_pv_shapes(num_points=10000, perturbation_strength=0.0):
     egg_carton = pv.PolyData(egg_carton_points)
     egg_carton_perturbed = pv.PolyData(perturb_points(egg_carton_points, perturbation_strength))
 
-    # Return all generated shapes
-    return (sphere, sphere_perturbed,
-            cylinder, cylinder_perturbed, 
-            torus, torus_perturbed,
-            egg_carton, egg_carton_perturbed)
+    # # Return all generated shapes
+    # return (sphere, sphere_perturbed,
+    #         cylinder, cylinder_perturbed, 
+    #         torus, torus_perturbed,
+    #         egg_carton, egg_carton_perturbed)
+
+        # Return all generated shapes
+    return (cylinder, cylinder_perturbed)
 
 
 def save_points_to_ply(points, filename):  

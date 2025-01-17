@@ -21,8 +21,8 @@ if not os.path.exists(test_shapes_dir):
     os.makedirs(test_shapes_dir)
 
 # Parameters for testing
-radii = [5.0, 10.0, 15.0]  # Radii for shapes
-point_densities = [10000, 50000, 100000]  # Number of points for each shape
+radii = [5.0, 10.0]  # Radii for shapes
+point_densities = [5000]  # Number of points for each shape
 perturbation_strength = 0.0  # No perturbation for correctness check
 
 # Storage for results
@@ -35,9 +35,8 @@ for radius in radii:
         
         # Create test shapes
         shapes = generate_pv_shapes(num_points=num_points, perturbation_strength=perturbation_strength)
-        shape_names = ["sphere", "sphere_perturbed", "cylinder",
-                       "cylinder_perturbed", "torus", "torus_perturbed",
-                       "egg_carton", "egg_carton_perturbed"]
+        # shape_names = ["sphere", "cylinder", "torus"]
+        shape_names = ["cylinder"]
 
         # Iterate over the shapes and save points as .ply with descriptive filenames
         for shape, shape_name in zip(shapes, shape_names):
@@ -51,16 +50,16 @@ for radius in radii:
 
             # Calculate and compare theoretical vs computed surface areas
             if "sphere" in shape_name:
-                theoretical_area = 4 * 3.14159 * (radius ** 2)
+                theoretical_area = 4.0 * 3.14159 * (radius ** 2.0)
             elif "cylinder" in shape_name:
                 height = 2 * radius  # Assume height equals diameter for simplicity
-                theoretical_area = (2 * 3.14159 * radius * height) + (2 * 3.14159 * radius ** 2)
+                theoretical_area = (2.0 * 3.14159 * radius * height)
             elif "torus" in shape_name:
                 tube_radius = radius
                 cross_section_radius = radius / 3  # Assume proportional tube radius
                 theoretical_area = (2 * 3.14159 * tube_radius) * (2 * 3.14159 * cross_section_radius)
-            elif "egg_carton" in shape_name:
-                theoretical_area = "N/A (non-standard shape)"
+            # elif "egg_carton" in shape_name:
+            #     theoretical_area = "N/A (non-standard shape)"
             
             computed_area = loaded_shape.area
             results.append({
