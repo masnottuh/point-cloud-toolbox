@@ -4,6 +4,7 @@ import tempfile
 import open3d as o3d
 import logging
 from scipy.spatial import KDTree
+from scipy.spatial import Delaunay
 import random
 from pointCloudToolbox import *
 import copy
@@ -15,95 +16,69 @@ def create_mesh_with_curvature(file_path):
     # Parse the PLY file
     points = parse_ply(file_path)
     if points is None:
-        return None
+        raise ValueError("Failed to parse the PLY file.")
 
     # Create Open3D PointCloud object
     pcd = o3d.geometry.PointCloud()
     pcd.points = o3d.utility.Vector3dVector(points)
-    
-    # Visualize the input point cloud
-    o3d.visualization.draw_geometries([pcd], window_name="Input Point Cloud", mesh_show_back_face=True)
 
-    # Calculate average distance using KDTree and get radii list
-    mets = average_distance_using_kd_tree(pcd)
-    radii_list = mets['radii_list']
-    
-    # Estimate normals for the point cloud
-    logging.info("Estimating normals...")
-    pcd.estimate_normals(search_param=o3d.geometry.KDTreeSearchParamHybrid(radii_list[0], len(pcd.points) // 100))
-    logging.info("Normalizing normals...")
-    pcd.normalize_normals()
+    # Estimate normals
+    logging.info("Estimating normals for the point cloud...")
+    pcd.estimate_normals(search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=1.0, max_nn=50))
+    pcd.orient_normals_consistent_tangent_plane(k=50)
 
-    # Rotate point cloud on multiple axes to create multiple meshes and merge them
-    logging.info("Creating multiple BPA meshes with rotations on multiple axes...")
-    meshes = []
-    # Generate 5 increments between 0 and pi
-    incrementsX = np.linspace(0, np.pi, 5)
-    incrementsY = np.linspace(0, np.pi, 5)
-    incrementsZ = np.linspace(0, np.pi, 5)
+    # Visualize the input point cloud with normals
+    o3d.visualization.draw_geometries([pcd], window_name="Input Point Cloud with Normals", mesh_show_back_face=True)
 
-    # Create combinations of these increments for rotation around X, Y, and Z axes
-    rotation_axes = list(itertools.product(incrementsX, incrementsY, incrementsZ))
+    # Calculate average distance and derive radii for BPA
+    logging.info("Calculating radii using average distance...")
+    metrics = average_distance_using_kd_tree(pcd)
+    average_distance = metrics['average_distance']
+    radii = metrics['radii_list']
+    logging.info(f"Average distance: {average_distance}, Radii for BPA: {radii}")
 
-    for angles in rotation_axes:
-        logging.info(f"Rotating point cloud by angles: {angles}")
+    # Perform surface reconstruction using Ball Pivoting Algorithm
+    logging.info("Performing Ball Pivoting Algorithm (BPA) for surface reconstruction...")
+    bpa_mesh = o3d.geometry.TriangleMesh.create_from_point_cloud_ball_pivoting(
+        pcd, o3d.utility.DoubleVector(radii)
+    )
 
-        # Use deepcopy to clone the point cloud instead of the clone() method
-        rotated_pcd = copy.deepcopy(pcd)
-        
-        # Rotate the cloned point cloud on specified axes
-        rotation_matrix = rotated_pcd.get_rotation_matrix_from_xyz(angles)
-        rotated_pcd.rotate(rotation_matrix, center=(0, 0, 0))  # Rotate around origin
+    # Check if BPA generated any triangles
+    if not bpa_mesh.has_triangles():
+        raise ValueError("Ball Pivoting Algorithm failed to generate any triangles. Check the input point cloud and radii.")
 
-        # Create mesh using Ball Pivoting Algorithm (BPA) on the rotated cloned point cloud
-        logging.info("Creating mesh using BPA on rotated point cloud...")
-        mesh = o3d.geometry.TriangleMesh.create_from_point_cloud_ball_pivoting(rotated_pcd, o3d.utility.DoubleVector(radii_list))
+    # Smooth and clean the mesh
+    logging.info("Cleaning the mesh...")
+    bpa_mesh.remove_degenerate_triangles()
+    bpa_mesh.remove_duplicated_triangles()
+    bpa_mesh.remove_unreferenced_vertices()
 
-        # Rotate the mesh back to the original orientation
-        logging.info("Rotating mesh back to the original orientation...")
-        inverse_rotation_matrix = np.linalg.inv(rotation_matrix)
-        mesh.rotate(inverse_rotation_matrix, center=(0, 0, 0))  # Rotate back around the same origin
+    # Convert to PyVista mesh
+    logging.info("Converting Open3D mesh to PyVista format...")
+    vertices = np.asarray(bpa_mesh.vertices)
+    triangles = np.asarray(bpa_mesh.triangles)
 
-        meshes.append(mesh)
+    if len(triangles) == 0:
+        raise ValueError("No triangles were generated in the mesh.")
 
-    # Combine all the meshes
-    logging.info("Combining BPA meshes...")
-    final_mesh = meshes[0]
-    for mesh in meshes[1:]:
-        final_mesh += mesh
+    # PyVista expects flattened faces
+    faces = np.hstack([[3] + list(tri) for tri in triangles])
+    pv_mesh = pv.PolyData(vertices, faces)
 
-    # Post-process the merged mesh: Remove degenerate and non-manifold elements
-    logging.info("Post-processing mesh: removing degenerate triangles and non-manifold edges...")
-    final_mesh.remove_degenerate_triangles()
-    final_mesh.remove_duplicated_triangles()
-    final_mesh.remove_duplicated_vertices()
-    final_mesh.remove_non_manifold_edges()
-    # final_mesh.simplify_quadric_decimation()
+    # Fill small holes in the mesh
+    logging.info("Filling small holes in the mesh...")
+    pv_mesh = pv_mesh.fill_holes(hole_size=(radii[-1]))
 
-    # Vertex clustering step to further simplify the mesh
-    logging.info("Applying vertex clustering for mesh simplification...")
-    voxel_size = radii_list[0]  # Adjust as needed for your mesh scale
-    final_mesh = final_mesh.simplify_vertex_clustering(voxel_size=voxel_size)
+    # Visualize the final mesh with original points overlay
+    logging.info("Visualizing the mesh with original points overlay...")
+    plotter = pv.Plotter()
+    plotter.add_mesh(pv_mesh, show_edges=True, color="lightblue", label="Mesh")
+    plotter.add_points(points, color="red", point_size=5, label="Original Points")
+    plotter.add_legend()
+    plotter.show()
 
-
-    # Visualize the final mesh
-    logging.info("Visualizing the final mesh...")
-    o3d.visualization.draw_geometries([final_mesh], mesh_show_back_face=True)
-
-    # Extract vertices and faces from the filled Open3D mesh
-    logging.info("Extracting vertices and faces from Open3D mesh...")
-    vertices = np.asarray(final_mesh.vertices)
-    faces = np.asarray(final_mesh.triangles)
-
-    # Convert Open3D mesh to PyVista format
-    logging.info("Converting Open3D mesh to PyVista mesh...")
-    pv_mesh = pv.PolyData(vertices, np.hstack([[3] + face.tolist() for face in faces]))
-
-    # fill remaining holes
-    pv_mesh = pv_mesh.fill_holes(5*radii_list[-1])
-
-    # Save vertices to a temporary text file
-    logging.info("Saving PyVista mesh vertices to temporary file...")
+    # Save the mesh vertices to a temporary file
+    logging.info("Saving PyVista mesh vertices to a temporary file...")
     with tempfile.NamedTemporaryFile(delete=False, suffix='.txt') as temp_file:
         np.savetxt(temp_file.name, pv_mesh.points)
         temp_file_path = temp_file.name
@@ -112,44 +87,39 @@ def create_mesh_with_curvature(file_path):
     return temp_file_path, pv_mesh
 
 
+
+
 ##################################
 def average_distance_using_kd_tree(pcd):
-
     logging.info("Calculating average distance between points")
 
     # Convert Open3D PointCloud to a numpy array
     points = np.asarray(pcd.points)
     num_points = points.shape[0]
-    
+
     if num_points < 2:
         raise ValueError("Point cloud must contain at least two points.")
+
+    # Use systematic sampling for better coverage
+    sample_size = min(1000, num_points)  # Use all points if fewer than 1000
+    sampled_points = points[np.random.choice(num_points, sample_size, replace=False)]
+
     # Create a KDTree for efficient nearest neighbor search
     tree = KDTree(points)
-    total_distance = 0
-    total_pairs = 0
-    K = 2
 
+    # Calculate average distance to the nearest neighbor
+    distances = []
+    for point in sampled_points:
+        dist, _ = tree.query(point, k=2)  # k=2 includes the point itself
+        distances.append(dist[1])  # Exclude the point itself
 
-    for i in range(1000):
-        # Select a random point from the points array
-        random_point = random.choice(points.tolist())
-        
-        # Query the K nearest neighbors for the selected point
-        distances, _ = tree.query(random_point, k=K)
-        
-        # Exclude the distance to itself (which is always 0)
-        distance = distances[1]
-        
-        total_distance += distance
-        total_pairs += 1
+    average_distance = np.mean(distances)
+    logging.info(f"Computed average distance: {average_distance}")
 
-    average_distance = total_distance / total_pairs if total_pairs > 0 else 0
-    
-    radii_list = np.linspace(0.1*average_distance,15*average_distance,5)
+    # Define BPA radii dynamically based on the point cloud's scale
+    radii_list = np.linspace(0.1 * average_distance, 25 * average_distance, 25)
 
-    return {'average_distance': average_distance,
-            'total_pairs': total_pairs,
-            'radii_list': radii_list}
+    return {'average_distance': average_distance, 'radii_list': radii_list}
 
 
 
@@ -231,9 +201,10 @@ def validate_shape(file_path):
         mean_curvature_squared = [item * item for item in mean_curvature]
         pv_mesh.point_data['mean_curvature_squared'] = mean_curvature_squared
 
-        computed_bending_energy, computed_stretching_energy = load_mesh_compute_energies(pv_mesh)
+        computed_bending_energy, computed_stretching_energy, computed_total_area = load_mesh_compute_energies(pv_mesh)
         print(f'computed bending energy: {computed_bending_energy}')
         print(f'computed stretching energy: {computed_stretching_energy}')
+        print(f'computed area: {computed_total_area}')
 
         plt.clf()
         plt.close()
@@ -322,12 +293,13 @@ def validate_shape(file_path):
         # Plot Mean curvature squared with color scale limits set to 1 std deviation from mean
         pv_mesh.plot(show_edges=False, scalars='mean_curvature_squared', cmap='plasma', clim=mean_clim, scalar_bar_args=sargs)
 
-
-
     else:
         print(f"Failed to create or load mesh.")
 
     logging.info("Exiting validate_shape()")
+
+    return computed_bending_energy, computed_stretching_energy, computed_total_area
+
 
 def convert_pv_to_o3d(pv_mesh):
     """
@@ -355,7 +327,7 @@ def load_mesh_compute_energies(mesh):
     
     if o3d_mesh is None or len(o3d_mesh.triangles) == 0:
         logging.error("Mesh creation failed or no cells are present.")
-        return 0, 0
+        return 0, 0, 0  # Return all three values as zero
 
     # Compute cell areas manually
     o3d_mesh.compute_triangle_normals()
@@ -363,7 +335,6 @@ def load_mesh_compute_energies(mesh):
     triangles = np.asarray(o3d_mesh.triangles)
 
     areas = np.zeros(len(triangles))
-    
     for i, tri in enumerate(triangles):
         v0 = vertices[tri[0]]
         v1 = vertices[tri[1]]
@@ -373,19 +344,22 @@ def load_mesh_compute_energies(mesh):
 
     if areas.size == 0:
         logging.error("Error: No areas computed. Mesh might not be valid.")
-        return 0, 0
+        return 0, 0, 0  # Return all three values as zero
 
     face_gaussian = np.zeros(len(triangles))
     face_mean = np.zeros(len(triangles))
     face_mean_squared = np.zeros(len(triangles))
 
     # Assuming gaussian_curvature and mean_curvature are available as point attributes
-    gaussian_curvature = np.asarray(mesh.point_data['gaussian_curvature'])
-    mean_curvature = np.asarray(mesh.point_data['mean_curvature'])
-    mean_squared = []
-    for item in mean_curvature:
-        mean_squared.append(abs(item*item))
-    mean_squared = np.asarray(mean_squared)
+    if 'gaussian_curvature' in mesh.point_data and 'mean_curvature' in mesh.point_data:
+        gaussian_curvature = np.asarray(mesh.point_data['gaussian_curvature'])
+        mean_curvature = np.asarray(mesh.point_data['mean_curvature'])
+        mean_squared = mean_curvature ** 2
+    else:
+        logging.warning("Curvature data missing. Setting curvatures to zero.")
+        gaussian_curvature = np.zeros(len(vertices))
+        mean_curvature = np.zeros(len(vertices))
+        mean_squared = np.zeros(len(vertices))
 
     for i, tri in enumerate(triangles):
         verts = np.array(tri)
@@ -400,22 +374,12 @@ def load_mesh_compute_energies(mesh):
         face_mean[i] = np.sum(weights * mean_curvature[verts])
         face_mean_squared[i] = np.sum(weights * mean_squared[verts])
 
-        if np.isnan(face_gaussian[i]) or np.isnan(face_mean[i]):
-            logging.warning(f"No curvature data for triangle {i}.")
-
-    # logging.info(f"Face Gaussian curvatures: {face_gaussian}")
-    # logging.info(f"Face mean curvatures: {face_mean}")
-    
-
     bending_energy = np.nansum(face_mean_squared * areas)
     stretching_energy = np.nansum(face_gaussian * areas)
-
     total_area = np.sum(areas)
-    print(f'total surface area computed: {total_area}')
-    
-    logging.info("Exiting load_mesh_compute_energies()")
 
-    return bending_energy, stretching_energy
+    logging.info("Exiting load_mesh_compute_energies()")
+    return bending_energy, stretching_energy, total_area
 
 ##################################
 def generate_pv_shapes(num_points=10000, perturbation_strength=0.0):
@@ -433,32 +397,104 @@ def generate_pv_shapes(num_points=10000, perturbation_strength=0.0):
         z = radius * np.cos(phi)
         return np.vstack((x, y, z)).T
 
-    # Evenly spaced points on a cylinder surface (parameterized)
-    def generate_cylinder_points(num_points, radius=5.0, height=10.0):
-        num_circumference_points = int(np.sqrt(num_points * (2 * np.pi * radius) / (2 * np.pi * radius + height)))
-        num_height_points = num_points // num_circumference_points
+    def generate_cylinder_points(num_points, radius=5.0):
+        # Calculate total surface area of the cylinder
+        height=(2*radius)
+        surface_area = 2 * np.pi * radius * height
 
+        # Approximate point density per unit area
+        point_density = num_points / surface_area
+
+        # Determine number of points along height and circumference proportionally
+        num_height_points = int(np.sqrt(num_points * height / (2 * np.pi * radius + height)))
+        num_circumference_points = num_points // num_height_points
+
+        # Create evenly spaced points along the height
         z = np.linspace(-height / 2, height / 2, num_height_points)
-        theta = np.linspace(0, 2 * np.pi, num_circumference_points, endpoint=False)
+
+        # Create evenly spaced points around the circumference (exclude endpoint)
+        theta = np.linspace(0, 2 * np.pi, num_circumference_points, endpoint=True)
+
+        # Use meshgrid to generate a grid of points
         theta, z = np.meshgrid(theta, z)
 
+        # Calculate x, y, z coordinates
         x = radius * np.cos(theta)
         y = radius * np.sin(theta)
+
+        # Combine into a single array of points
+        points = np.vstack([x.ravel(), y.ravel(), z.ravel()]).T
+
+        # Duplicate points for periodic continuity at θ = 0 and θ = 2π
+        duplicate_theta_points = points[points[:, 0] == radius]  # Points at θ = 0
+        points = np.vstack([points, duplicate_theta_points])  # Add duplicates
+
+        return points
+
+
+
+def generate_pv_shapes(num_points=10000, perturbation_strength=0.0, radius=10.0):
+    def perturb_points(points, strength):
+        perturbation = np.random.normal(scale=strength, size=points.shape)
+        return points + perturbation
+
+    # Evenly spaced points on a sphere (parameterized)
+    def generate_sphere_points(num_points, radius):
+        indices = np.arange(0, num_points, dtype=float) + 0.5
+        phi = np.arccos(1 - 2 * indices / num_points)  # Properly spaced in polar angle
+        theta = np.pi * (1 + np.sqrt(5)) * indices    # Golden angle method for azimuthal angle
+        x = radius * np.cos(theta) * np.sin(phi)
+        y = radius * np.sin(theta) * np.sin(phi)
+        z = radius * np.cos(phi)
+        return np.vstack((x, y, z)).T
+
+    def generate_cylinder_points(num_points, radius):
+        height = 2 * radius  # Assume height equals diameter
+        surface_area = 2 * np.pi * radius * height
+        point_density = num_points / surface_area
+
+        # Determine number of points along height and circumference proportionally
+        num_height_points = int(np.sqrt(num_points * height / (2 * np.pi * radius + height)))
+        num_circumference_points = num_points // num_height_points
+
+        # Create evenly spaced points along the height
+        z = np.linspace(-height / 2, height / 2, num_height_points)
+
+        # Create evenly spaced points around the circumference
+        theta = np.linspace(0, 2 * np.pi, num_circumference_points, endpoint=False)
+
+        # Use meshgrid to generate a grid of points
+        theta, z = np.meshgrid(theta, z)
+
+        # Calculate x, y, z coordinates
+        x = radius * np.cos(theta)
+        y = radius * np.sin(theta)
+
+        # Combine into a single array of points
         return np.vstack([x.ravel(), y.ravel(), z.ravel()]).T
 
     # Evenly spaced points on a torus surface (parameterized)
-    def generate_torus_points(num_points, tube_radius=10.0, cross_section_radius=3.0):
-        num_around_tube = int(np.sqrt(num_points * (2 * np.pi * tube_radius) / (2 * np.pi * tube_radius + 2 * np.pi * cross_section_radius)))
-        num_around_cross_section = num_points // num_around_tube
+    def generate_torus_points(num_points, tube_radius, cross_section_radius):
+        surface_area = (2 * np.pi * tube_radius) * (2 * np.pi * cross_section_radius)
+        density = num_points / surface_area
+        spacing = 1 / np.sqrt(density)
 
-        theta = np.linspace(0, 2 * np.pi, num_around_tube, endpoint=False)  # Angle around the tube
-        phi = np.linspace(0, 2 * np.pi, num_around_cross_section, endpoint=False)  # Angle around the cross-section
-        theta, phi = np.meshgrid(theta, phi)
+        points = []
+        theta_spacing = spacing / tube_radius
+        phi_spacing = spacing / cross_section_radius
 
-        x = (tube_radius + cross_section_radius * np.cos(phi)) * np.cos(theta)
-        y = (tube_radius + cross_section_radius * np.cos(phi)) * np.sin(theta)
-        z = cross_section_radius * np.sin(phi)
-        return np.vstack([x.ravel(), y.ravel(), z.ravel()]).T
+        theta = 0
+        while theta < 2 * np.pi:
+            phi = 0
+            while phi < 2 * np.pi:
+                x = (tube_radius + cross_section_radius * np.cos(phi)) * np.cos(theta)
+                y = (tube_radius + cross_section_radius * np.cos(phi)) * np.sin(theta)
+                z = cross_section_radius * np.sin(phi)
+                points.append([x, y, z])
+                phi += phi_spacing
+            theta += theta_spacing
+
+        return np.array(points)
 
     # Evenly spaced points for an egg carton shape (parameterized)
     def generate_egg_carton_points(num_points):
@@ -469,33 +505,24 @@ def generate_pv_shapes(num_points=10000, perturbation_strength=0.0):
         return np.vstack([x.ravel(), y.ravel(), z.ravel()]).T
 
     # Generate and perturb the shapes
-    sphere_points = generate_sphere_points(num_points)
+    sphere_points = generate_sphere_points(num_points, radius)
     sphere = pv.PolyData(sphere_points)
     sphere_perturbed = pv.PolyData(perturb_points(sphere_points, perturbation_strength))
-    print(f'theoretical sphere surface area: {4.0 * 3.14159 * (10.0**2.0)}')
 
-    cylinder_points = generate_cylinder_points(num_points)
+    cylinder_points = generate_cylinder_points(num_points, radius)
     cylinder = pv.PolyData(cylinder_points)
     cylinder_perturbed = pv.PolyData(perturb_points(cylinder_points, perturbation_strength))
-    print(f'theoretical cylinder surface area: {(2.0 * (3.14159 * 5.0)) * 10.0}')
 
-    torus_points = generate_torus_points(num_points)
+    torus_points = generate_torus_points(num_points, tube_radius=radius, cross_section_radius=radius / 3)
     torus = pv.PolyData(torus_points)
     torus_perturbed = pv.PolyData(perturb_points(torus_points, perturbation_strength))
-    print(f'theoretical torus surface area: {(2.0 * 3.14159 * 10.0) * (2.0 * 3.14159 * 3.0)}')
 
     egg_carton_points = generate_egg_carton_points(num_points)
     egg_carton = pv.PolyData(egg_carton_points)
     egg_carton_perturbed = pv.PolyData(perturb_points(egg_carton_points, perturbation_strength))
 
-    # # Return all generated shapes
-    # return (sphere, sphere_perturbed,
-    #         cylinder, cylinder_perturbed, 
-    #         torus, torus_perturbed,
-    #         egg_carton, egg_carton_perturbed)
+    return (cylinder, cylinder_perturbed, torus, torus_perturbed, sphere, sphere_perturbed, egg_carton, egg_carton_perturbed)
 
-        # Return all generated shapes
-    return (cylinder, cylinder_perturbed)
 
 
 def save_points_to_ply(points, filename):  
