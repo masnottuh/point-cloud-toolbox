@@ -24,11 +24,22 @@ def create_mesh_with_curvature(file_path):
 
     # Estimate normals
     logging.info("Estimating normals for the point cloud...")
-    pcd.estimate_normals(search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=1.0, max_nn=50))
+    # Get the bounding box of the point cloud
+    bbox = pcd.get_axis_aligned_bounding_box()
+    min_bound = np.array(bbox.min_bound)
+    max_bound = np.array(bbox.max_bound)
+
+    # Compute the diagonal length of the bounding box
+    scale = np.linalg.norm(max_bound - min_bound)
+
+    # Compute the radius as a fraction of the scale
+    scale_fraction=0.1
+    radius = scale * scale_fraction
+    pcd.estimate_normals(search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=radius, max_nn=50))
     pcd.orient_normals_consistent_tangent_plane(k=50)
 
     # Visualize the input point cloud with normals
-    o3d.visualization.draw_geometries([pcd], window_name="Input Point Cloud with Normals", mesh_show_back_face=True)
+    # o3d.visualization.draw_geometries([pcd], window_name="Input Point Cloud with Normals", mesh_show_back_face=True)
 
     # Calculate average distance and derive radii for BPA
     logging.info("Calculating radii using average distance...")
@@ -66,16 +77,84 @@ def create_mesh_with_curvature(file_path):
     pv_mesh = pv.PolyData(vertices, faces)
 
     # Fill small holes in the mesh
+    mesh = convert_pv_to_o3d(pv_mesh)
+
+    # Repair the mesh
+    if not mesh.is_edge_manifold():
+        print("Warning: Mesh has non-manifold edges. Repairing may not work as expected.")
+
+    # Detect boundary edges (open boundaries)
+    boundary_edges = mesh.get_non_manifold_edges(allow_boundary_edges=True)
+    if len(boundary_edges) == 0:
+        print("No open boundaries detected.")
+
+    # Detect boundary loops
+    boundary_loops = detect_boundary_loops(mesh)
+    if not boundary_loops:
+        print("No boundary loops found.")
+        return mesh
+
+    # Fill small holes
+    for loop in boundary_loops:
+        if not loop:
+            logging.warning("Empty boundary loop encountered. Skipping.")
+            continue
+
+        # Extract boundary points
+        loop_points = np.asarray(mesh.vertices)[loop]
+
+        # Calculate the perimeter of the boundary loop
+        perimeter = np.sum(np.linalg.norm(np.diff(loop_points, axis=0, append=loop_points[:1]), axis=1))
+        if perimeter > 5*radii[-1]:
+            logging.info(f"Skipping boundary loop with perimeter {perimeter:.4f} (larger than max_hole_size).")
+            continue
+
+        # Check if the boundary points are planar
+        planar, normal = is_planar(loop_points)
+        if planar:
+            # Fill the hole directly with triangulation
+            triangles = fill_planar_hole(loop_points)
+            new_faces = np.array([[loop[i] for i in tri] for tri in triangles])
+        else:
+            # Use convex hull for non-planar holes
+            boundary_cloud = o3d.geometry.PointCloud()
+            boundary_cloud.points = o3d.utility.Vector3dVector(loop_points)
+
+            # Compute the convex hull, handle invalid results
+            try:
+                boundary_hull, _ = boundary_cloud.compute_convex_hull()
+                new_faces = np.asarray(boundary_hull.triangles) + len(mesh.vertices)
+            except Exception as e:
+                logging.error(f"Failed to compute convex hull for boundary loop: {e}")
+                continue
+
+        # Append new vertices and faces to the original mesh
+        new_vertices = np.vstack([np.asarray(mesh.vertices), loop_points])
+        mesh.vertices = o3d.utility.Vector3dVector(new_vertices)
+        mesh.triangles = o3d.utility.Vector3iVector(
+            np.vstack([np.asarray(mesh.triangles), new_faces])
+        )
+
+    # Clean the mesh after filling
+    mesh.remove_degenerate_triangles()
+    mesh.remove_unreferenced_vertices()
+    mesh.remove_non_manifold_edges()
+
+    # Convert back to PyVista mesh
+    vertices = np.asarray(mesh.vertices)
+    triangles = np.asarray(mesh.triangles)
+    faces = np.hstack([[3] + list(tri) for tri in triangles])
+    pv_mesh = pv.PolyData(vertices, faces)
     logging.info("Filling small holes in the mesh...")
     pv_mesh = pv_mesh.fill_holes(hole_size=(radii[-1]))
 
-    # Visualize the final mesh with original points overlay
-    logging.info("Visualizing the mesh with original points overlay...")
-    plotter = pv.Plotter()
-    plotter.add_mesh(pv_mesh, show_edges=True, color="lightblue", label="Mesh")
-    plotter.add_points(points, color="red", point_size=5, label="Original Points")
-    plotter.add_legend()
-    plotter.show()
+    # # Visualize the final mesh with original points overlay
+    # logging.info("Visualizing the mesh with original points overlay...")
+    # plotter = pv.Plotter()
+    # plotter.add_mesh(pv_mesh, show_edges=True, color="lightblue", label="Mesh")
+    # plotter.add_points(points, color="red", point_size=5, label="Original Points")
+    # plotter.add_legend()
+    # plotter.show()
 
     # Save the mesh vertices to a temporary file
     logging.info("Saving PyVista mesh vertices to a temporary file...")
@@ -86,7 +165,105 @@ def create_mesh_with_curvature(file_path):
     logging.info("Exiting create_mesh_with_curvature()")
     return temp_file_path, pv_mesh
 
+def is_planar(points, tolerance=1e-2):
+    """
+    Check if a set of points is approximately planar.
 
+    Args:
+        points (np.ndarray): Array of points (Nx3).
+        tolerance (float): Threshold for planarity.
+
+    Returns:
+        bool, np.ndarray: True if planar, and the plane normal if planar.
+    """
+    if len(points) < 3:
+        return False, None
+
+    # Compute the normal of the plane using the first three points
+    v1 = points[1] - points[0]
+    v2 = points[2] - points[0]
+    normal = np.cross(v1, v2)
+    normal /= np.linalg.norm(normal)
+
+    # Check the distance of all points from the plane
+    distances = np.dot(points - points[0], normal)
+    if np.all(np.abs(distances) < tolerance):
+        return True, normal
+    return False, None
+
+
+def fill_planar_hole(loop_points):
+    """
+    Fill a planar hole by triangulating its boundary.
+
+    Args:
+        loop_points (np.ndarray): Points of the boundary loop (Nx3).
+
+    Returns:
+        np.ndarray: Triangles that fill the hole.
+    """
+    # Project points onto a plane (2D)
+    centroid = np.mean(loop_points, axis=0)
+    v1 = loop_points[1] - loop_points[0]
+    v1 /= np.linalg.norm(v1)
+    normal = np.cross(v1, loop_points[2] - loop_points[0])
+    normal /= np.linalg.norm(normal)
+    v2 = np.cross(normal, v1)
+
+    # Create 2D coordinates for triangulation
+    plane_points = np.dot(loop_points - centroid, np.vstack((v1, v2)).T)
+
+    # Triangulate in 2D
+    delaunay = Delaunay(plane_points)
+    triangles = delaunay.simplices
+
+    return triangles
+
+
+def detect_boundary_loops(mesh):
+    """
+    Detect boundary loops in an Open3D TriangleMesh.
+
+    Args:
+        mesh (o3d.geometry.TriangleMesh): The input mesh.
+
+    Returns:
+        List[List[int]]: A list of boundary loops, each represented as a list of vertex indices.
+    """
+    edges = {}
+    triangles = np.asarray(mesh.triangles)
+
+    # Count occurrences of each edge
+    for tri in triangles:
+        for i in range(3):
+            edge = tuple(sorted((tri[i], tri[(i + 1) % 3])))
+            if edge in edges:
+                edges[edge] += 1
+            else:
+                edges[edge] = 1
+
+    # Extract boundary edges (shared by only one triangle)
+    boundary_edges = [edge for edge, count in edges.items() if count == 1]
+
+    # Group boundary edges into loops
+    loops = []
+    while boundary_edges:
+        loop = []
+        edge = boundary_edges.pop(0)
+        loop.extend(edge)
+
+        while True:
+            # Find the next edge that connects to the current loop
+            connected = [e for e in boundary_edges if loop[-1] in e]
+            if not connected:
+                break
+            next_edge = connected[0]
+            boundary_edges.remove(next_edge)
+            loop.append(next_edge[1] if next_edge[0] == loop[-1] else next_edge[0])
+
+        loops.append(loop)
+
+    return loops
 
 
 ##################################
@@ -117,7 +294,7 @@ def average_distance_using_kd_tree(pcd):
     logging.info(f"Computed average distance: {average_distance}")
 
     # Define BPA radii dynamically based on the point cloud's scale
-    radii_list = np.linspace(0.1 * average_distance, 25 * average_distance, 25)
+    radii_list = np.linspace(0.01 * average_distance, 10 * average_distance, 50)
 
     return {'average_distance': average_distance, 'radii_list': radii_list}
 
@@ -148,8 +325,8 @@ def validate_shape(file_path):
         # print(f'Gaussian first three: {gaussian_curvature[0:3]}')
         # print(f'Mean first three: {mean_curvature[0:3]}')
 
-        print("plotting quadratic curvatures")
-        pcl.plot_points_colored_by_quadratic_curvatures()
+        # print("plotting quadratic curvatures")
+        # pcl.plot_points_colored_by_quadratic_curvatures()
 
         print("saving to ply format")
         
@@ -206,25 +383,25 @@ def validate_shape(file_path):
         print(f'computed stretching energy: {computed_stretching_energy}')
         print(f'computed area: {computed_total_area}')
 
-        plt.clf()
-        plt.close()
-        # Plot original distribution of Gaussian curvature
-        plt.figure(figsize=(10, 5))
-        plt.hist(gaussian_curvature, bins=1000, color='blue', alpha=0.7, label='Gaussian Curvature')
-        plt.title('Original Distribution of Gaussian Curvature')
-        plt.xlabel('Gaussian Curvature')
-        plt.ylabel('Frequency')
-        plt.legend()
-        plt.show()
+        # plt.clf()
+        # plt.close()
+        # # Plot original distribution of Gaussian curvature
+        # plt.figure(figsize=(10, 5))
+        # plt.hist(gaussian_curvature, bins=1000, color='blue', alpha=0.7, label='Gaussian Curvature')
+        # plt.title('Original Distribution of Gaussian Curvature')
+        # plt.xlabel('Gaussian Curvature')
+        # plt.ylabel('Frequency')
+        # plt.legend()
+        # plt.show()
 
-        # Plot original distribution of Mean curvature squared
-        plt.figure(figsize=(10, 5))
-        plt.hist(mean_curvature_squared, bins=1000, color='orange', alpha=0.7, label='Mean Curvature Squared')
-        plt.title('Original Distribution of Mean Curvature Squared')
-        plt.xlabel('Mean Curvature Squared')
-        plt.ylabel('Frequency')
-        plt.legend()
-        plt.show()
+        # # Plot original distribution of Mean curvature squared
+        # plt.figure(figsize=(10, 5))
+        # plt.hist(mean_curvature_squared, bins=1000, color='orange', alpha=0.7, label='Mean Curvature Squared')
+        # plt.title('Original Distribution of Mean Curvature Squared')
+        # plt.xlabel('Mean Curvature Squared')
+        # plt.ylabel('Frequency')
+        # plt.legend()
+        # plt.show()
 
         # Define Z-score threshold for filtering (e.g., 3 standard deviations)
         z_threshold = 5
@@ -237,23 +414,23 @@ def validate_shape(file_path):
         mean_curvature_squared_z_scores = np.abs((mean_curvature_squared - np.mean(mean_curvature_squared)) / np.std(mean_curvature_squared))
         mean_curvature_squared_filtered = np.where(mean_curvature_squared_z_scores > z_threshold, np.nan, mean_curvature_squared)
 
-        # Plot filtered distribution of Gaussian curvature
-        plt.figure(figsize=(10, 5))
-        plt.hist(gaussian_filtered[~np.isnan(gaussian_filtered)], bins=1000, color='blue', alpha=0.7, label='Filtered Gaussian Curvature')
-        plt.title('Filtered Distribution of Gaussian Curvature')
-        plt.xlabel('Gaussian Curvature')
-        plt.ylabel('Frequency')
-        plt.legend()
-        plt.show()
+        # # Plot filtered distribution of Gaussian curvature
+        # plt.figure(figsize=(10, 5))
+        # plt.hist(gaussian_filtered[~np.isnan(gaussian_filtered)], bins=1000, color='blue', alpha=0.7, label='Filtered Gaussian Curvature')
+        # plt.title('Filtered Distribution of Gaussian Curvature')
+        # plt.xlabel('Gaussian Curvature')
+        # plt.ylabel('Frequency')
+        # plt.legend()
+        # plt.show()
 
-        # Plot filtered distribution of Mean curvature squared
-        plt.figure(figsize=(10, 5))
-        plt.hist(mean_curvature_squared_filtered[~np.isnan(mean_curvature_squared_filtered)], bins=1000, color='orange', alpha=0.7, label='Filtered Mean Curvature Squared')
-        plt.title('Filtered Distribution of Mean Curvature Squared')
-        plt.xlabel('Mean Curvature Squared')
-        plt.ylabel('Frequency')
-        plt.legend()
-        plt.show()
+        # # Plot filtered distribution of Mean curvature squared
+        # plt.figure(figsize=(10, 5))
+        # plt.hist(mean_curvature_squared_filtered[~np.isnan(mean_curvature_squared_filtered)], bins=1000, color='orange', alpha=0.7, label='Filtered Mean Curvature Squared')
+        # plt.title('Filtered Distribution of Mean Curvature Squared')
+        # plt.xlabel('Mean Curvature Squared')
+        # plt.ylabel('Frequency')
+        # plt.legend()
+        # plt.show()
 
         # Replace outliers in original mesh with NaN
         pv_mesh.point_data['gaussian_curvature'] = gaussian_filtered
@@ -287,11 +464,11 @@ def validate_shape(file_path):
         font_family="arial",
         )
 
-        # Plot Gaussian curvature with color scale limits set to 1 std deviation from mean
-        pv_mesh.plot(show_edges=False, scalars='gaussian_curvature', cmap='viridis', clim=gaussian_clim, scalar_bar_args=sargs)
+        # # Plot Gaussian curvature with color scale limits set to 1 std deviation from mean
+        # pv_mesh.plot(show_edges=False, scalars='gaussian_curvature', cmap='viridis', clim=gaussian_clim, scalar_bar_args=sargs)
 
-        # Plot Mean curvature squared with color scale limits set to 1 std deviation from mean
-        pv_mesh.plot(show_edges=False, scalars='mean_curvature_squared', cmap='plasma', clim=mean_clim, scalar_bar_args=sargs)
+        # # Plot Mean curvature squared with color scale limits set to 1 std deviation from mean
+        # pv_mesh.plot(show_edges=False, scalars='mean_curvature_squared', cmap='plasma', clim=mean_clim, scalar_bar_args=sargs)
 
     else:
         print(f"Failed to create or load mesh.")
@@ -508,18 +685,22 @@ def generate_pv_shapes(num_points=10000, perturbation_strength=0.0, radius=10.0)
     sphere_points = generate_sphere_points(num_points, radius)
     sphere = pv.PolyData(sphere_points)
     sphere_perturbed = pv.PolyData(perturb_points(sphere_points, perturbation_strength))
+    sphere = pv.PolyData(perturb_points(sphere_points, (perturbation_strength*0.01)))
 
     cylinder_points = generate_cylinder_points(num_points, radius)
     cylinder = pv.PolyData(cylinder_points)
     cylinder_perturbed = pv.PolyData(perturb_points(cylinder_points, perturbation_strength))
+    cylinder = pv.PolyData(perturb_points(cylinder_points, (perturbation_strength*0.01)))
 
     torus_points = generate_torus_points(num_points, tube_radius=radius, cross_section_radius=radius / 3)
     torus = pv.PolyData(torus_points)
     torus_perturbed = pv.PolyData(perturb_points(torus_points, perturbation_strength))
+    torus = pv.PolyData(perturb_points(torus_points, (perturbation_strength*0.01)))
 
     egg_carton_points = generate_egg_carton_points(num_points)
     egg_carton = pv.PolyData(egg_carton_points)
     egg_carton_perturbed = pv.PolyData(perturb_points(egg_carton_points, perturbation_strength))
+    egg_carton = pv.PolyData(perturb_points(egg_carton_points, (perturbation_strength*0.01)))
 
     return (cylinder, cylinder_perturbed, torus, torus_perturbed, sphere, sphere_perturbed, egg_carton, egg_carton_perturbed)
 

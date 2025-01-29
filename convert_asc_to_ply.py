@@ -79,7 +79,7 @@ def convert_asc_to_ply(asc_directory, ply_directory, downsample_fraction=0.1):
 
     # Process each .asc file
     for asc_filename in os.listdir(asc_directory):
-        if asc_filename.endswith('.asc'):
+        if asc_filename.endswith('.ply'):
             asc_file_path = os.path.join(asc_directory, asc_filename)
             ply_filename = os.path.splitext(asc_filename)[0] + '.ply'
             ply_file_path = os.path.join(ply_directory, ply_filename)

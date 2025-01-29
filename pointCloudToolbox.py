@@ -535,18 +535,18 @@ class PointCloud:
 
         # plt.show()
 
-        # Plot histograms
-        fig_hist_K_fund = plt.figure()
-        plt.hist(np.array(self.K_quadric, dtype=float), bins=100)
-        plt.title(f'Hist Gaussian Curvature from quadric surface, K = {self.k_neighbors}, Voxel Size = {self.voxel_size}')
-        plt.tight_layout()
-        pickle.dump(fig_hist_K_fund, open(f'{self.output_path}Hist Gaussian Curvature from quadric surface, K = {self.k_neighbors}, Voxel Size = {self.voxel_size}.pickle', 'wb'))
+        # # Plot histograms
+        # fig_hist_K_fund = plt.figure()
+        # plt.hist(np.array(self.K_quadric, dtype=float), bins=100)
+        # plt.title(f'Hist Gaussian Curvature from quadric surface, K = {self.k_neighbors}, Voxel Size = {self.voxel_size}')
+        # plt.tight_layout()
+        # pickle.dump(fig_hist_K_fund, open(f'{self.output_path}Hist Gaussian Curvature from quadric surface, K = {self.k_neighbors}, Voxel Size = {self.voxel_size}.pickle', 'wb'))
 
-        fig_hist_H_fund = plt.figure()
-        plt.hist(np.array(self.H_quadric, dtype=float), bins=100)
-        plt.title(f'Hist Mean Curvature from quadric surface, K = {self.k_neighbors}, Voxel Size = {self.voxel_size}')
-        plt.tight_layout()
-        pickle.dump(fig_hist_H_fund, open(f'{self.output_path}Hist Mean Curvature from quadric surface, K = {self.k_neighbors}, Voxel Size = {self.voxel_size}.pickle', 'wb'))
+        # fig_hist_H_fund = plt.figure()
+        # plt.hist(np.array(self.H_quadric, dtype=float), bins=100)
+        # plt.title(f'Hist Mean Curvature from quadric surface, K = {self.k_neighbors}, Voxel Size = {self.voxel_size}')
+        # plt.tight_layout()
+        # pickle.dump(fig_hist_H_fund, open(f'{self.output_path}Hist Mean Curvature from quadric surface, K = {self.k_neighbors}, Voxel Size = {self.voxel_size}.pickle', 'wb'))
 
         # plt.show()
 
@@ -589,19 +589,19 @@ class PointCloud:
 
         # plt.show()
 
-        # Plot histograms
-        fig_hist_K_fund = plt.figure()
-        plt.hist(np.array(self.K_quadratic, dtype=float), bins=100)
-        plt.title(f'Hist Gaussian Curvature from quadratic surface, K = {self.k_neighbors}, Voxel Size = {self.voxel_size}')
-        plt.tight_layout()
-        pickle.dump(fig_hist_K_fund, open(f'{self.output_path}Hist Gaussian Curvature from quadratic surface, K = {self.k_neighbors}, Voxel Size = {self.voxel_size}.pickle', 'wb'))
+        # # Plot histograms
+        # fig_hist_K_fund = plt.figure()
+        # plt.hist(np.array(self.K_quadratic, dtype=float), bins=100)
+        # plt.title(f'Hist Gaussian Curvature from quadratic surface, K = {self.k_neighbors}, Voxel Size = {self.voxel_size}')
+        # plt.tight_layout()
+        # pickle.dump(fig_hist_K_fund, open(f'{self.output_path}Hist Gaussian Curvature from quadratic surface, K = {self.k_neighbors}, Voxel Size = {self.voxel_size}.pickle', 'wb'))
 
-        fig_hist_H_fund = plt.figure()
-        plt.hist(np.array(self.H_quadratic, dtype=float), bins=100)
-        plt.title(f'Hist Mean Curvature from quadratic surface, K = {self.k_neighbors}, Voxel Size = {self.voxel_size}')
-        plt.tight_layout()
-        pickle.dump(fig_hist_H_fund, open(f'{self.output_path}Hist Mean Curvature from quadratic surface, K = {self.k_neighbors}, Voxel Size = {self.voxel_size}.pickle', 'wb'))
-        plt.close()
+        # fig_hist_H_fund = plt.figure()
+        # plt.hist(np.array(self.H_quadratic, dtype=float), bins=100)
+        # plt.title(f'Hist Mean Curvature from quadratic surface, K = {self.k_neighbors}, Voxel Size = {self.voxel_size}')
+        # plt.tight_layout()
+        # pickle.dump(fig_hist_H_fund, open(f'{self.output_path}Hist Mean Curvature from quadratic surface, K = {self.k_neighbors}, Voxel Size = {self.voxel_size}.pickle', 'wb'))
+        # plt.close()
         # plot(self.points, c=np.array(self.K_quadratic), shading={"point_size": 10.0})
         # plot(self.points, c=np.array(self.H_quadratic), shading={"point_size": 10.0})
         # mp.subplot(self.points, c=np.random.rand(*v.shape), s=[1, 2, 1], data=d, shading={"point_size": 0.03})
