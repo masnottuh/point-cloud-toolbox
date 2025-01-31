@@ -13,6 +13,10 @@ import subprocess
 import sys
 from scipy.integrate import dblquad
 import glob
+import wakepy
+
+# keep awake for long tests
+wakepy.set_keepawake(True)
 
 ##################################
 logging.basicConfig(level=logging.INFO)
@@ -163,4 +167,7 @@ for shape in results_df['Shape'].unique():
         # Save and show the plot
         plt.savefig(f"{output_dir}/{shape}_error_vs_density.png")
         plt.show()
+
+
+wakepy.set_keepawake(False)
 
