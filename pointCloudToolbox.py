@@ -463,29 +463,6 @@ class PointCloud:
 
         return K_g, K_h, k1, k2
 
-    def generate_sphere_point_cloud(self, radius, num_points):
-        self.points = []
-        self.normals = []
-        for _ in range(num_points):
-            phi = np.random.uniform(0, 2 * np.pi)
-            costheta = np.random.uniform(-1, 1)
-
-            theta = np.arccos(costheta)
-            r = radius  # Fixed at the sphere's radius
-
-            x = r * np.sin(theta) * np.cos(phi)
-            y = r * np.sin(theta) * np.sin(phi)
-            z = r * np.cos(theta)
-
-            nx = x / radius  # Normal vector components (since it's a sphere, they are the same as the coordinates)
-            ny = y / radius
-            nz = z / radius
-            
-            self.points.append(np.array([x, y, z]))
-            self.normals.append(np.array([nx, ny, nz]))
-        self.points = np.array(self.points)
-        self.normals = np.array(self.normals)
-
     def visualize_knn_for_n_random_points(self, num_points_to_plot, k_neighbors):
 
         fig = plt.figure()
@@ -771,7 +748,7 @@ class PointCloud:
                     maxk = max(test_results[point[0]]['gaussian'][-6:]) #Using gaussian to ensure convergence in principal_1 and p2 directions
                     mink = min(test_results[point[0]]['gaussian'][-6:])
                     difference = abs(round(maxk - mink))
-                    if difference < 1e-5:
+                    if difference < 1e-6:
                         explicit_converged_neighbors.append(num_neighbors)
                         break
                     else:

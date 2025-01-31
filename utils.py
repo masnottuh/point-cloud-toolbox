@@ -498,10 +498,11 @@ def validate_shape(file_path, flag):
             mean_std = 1e-6
 
         # Ask the user if they want to filter outliers
+        filter_outliers = "N"  # Default to "N" to prevent uninitialized use
         if flag is not "N":
             filter_outliers = input("Would you like to filter curvature outliers? (Y/N): ").strip().upper()
 
-        if filter_outliers == "Y" and flag is not "N":
+        if filter_outliers == "Y" and flag != "N":
             # Define Z-score thresholds to test
             z_thresholds = [7, 5, 3, 2, 1]
 
@@ -741,11 +742,16 @@ def generate_pv_shapes(shape_name, num_points=10000, perturbation_strength=0.0, 
         return np.array(points)
 
     # Egg-carton
-    def generate_egg_carton_points(num_points):
-        x = np.linspace(-3, 3, int(np.sqrt(num_points)) * 2)
-        y = np.linspace(-3, 3, int(np.sqrt(num_points)) * 2)
+    def generate_egg_carton_points(num_points, radius):
+        # Set the x and y domain to be proportional to the given radius
+        x = np.linspace(-radius, radius, int(np.sqrt(num_points)) * 2)
+        y = np.linspace(-radius, radius, int(np.sqrt(num_points)) * 2)
         x, y = np.meshgrid(x, y)
-        z = np.sin(x) * np.cos(y)
+
+        # Scale z proportionally so that the height variation is consistent
+        z_scale = radius / 10.0  # Adjust this factor if needed for better proportionality
+        z = z_scale * np.sin(x / radius * np.pi) * np.cos(y / radius * np.pi)
+
         return np.vstack([x.ravel(), y.ravel(), z.ravel()]).T
 
     # Generate the requested shape
@@ -756,7 +762,7 @@ def generate_pv_shapes(shape_name, num_points=10000, perturbation_strength=0.0, 
     elif shape_name == "torus":
         points = generate_torus_points(num_points, tube_radius=radius, cross_section_radius=radius / 3)
     elif shape_name == "egg_carton":
-        points = generate_egg_carton_points(num_points)
+        points = generate_egg_carton_points(num_points, radius)
     else:
         raise ValueError(f"Unknown shape: {shape_name}")
 
