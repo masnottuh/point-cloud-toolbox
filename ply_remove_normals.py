@@ -19,5 +19,5 @@ def convert_ply_to_xyz(input_file, output_file):
 
 # Usage example
 input_ply_file = "Scans/5th_unbind_9_5_2024_CR.ply"  # Replace with the actual input PLY file name
-output_ply_file = "no_normals_5th_unbind_9_5_2024_CR"  # Replace with the desired output PLY file name
+output_ply_file = "no_normals_5th_unbind_9_5_2024_CR.ply"  # Replace with the desired output PLY file name
 convert_ply_to_xyz(input_ply_file, output_ply_file)
