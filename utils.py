@@ -781,7 +781,7 @@ def generate_pv_shapes(shape_name, num_points=10000, perturbation_strength=0.0, 
         y = np.sin(theta)
         points = np.vstack([x.ravel(), y.ravel(), z.ravel()]).T
         bbox_size = np.ptp(points, axis=0).max()
-        return add_noise(points, (0.1*bbox_fraction) * bbox_size)
+        return points
 
     def generate_torus_points(num_points):
         """ Generates a unit-radius torus. """
@@ -802,7 +802,7 @@ def generate_pv_shapes(shape_name, num_points=10000, perturbation_strength=0.0, 
             theta += theta_spacing
         points = np.array(points)
         bbox_size = np.ptp(points, axis=0).max()
-        return add_noise(points, (0.1*bbox_fraction) * bbox_size)
+        return points
 
     def generate_egg_carton_points(num_points):
         """ Generates an egg-carton surface with the correct number of points. """
@@ -822,7 +822,7 @@ def generate_pv_shapes(shape_name, num_points=10000, perturbation_strength=0.0, 
             points = points[np.random.choice(len(points), num_points, replace=False)]
 
         bbox_size = np.ptp(points, axis=0).max()
-        return add_noise(points, (0.1*bbox_fraction) * bbox_size)
+        return points
 
     # Generate base shape at radius=1
     if shape_name == "sphere":
