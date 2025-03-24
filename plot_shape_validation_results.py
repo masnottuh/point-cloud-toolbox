@@ -2,6 +2,8 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 import itertools
+import matplotlib.cm as cm
+import matplotlib.colors as mcolors
 
 # Load the CSV file
 file_path = "incremental_shape_comparison_results.csv"  # Update this path as needed
@@ -15,7 +17,7 @@ numeric_columns = ["Computed Area", "Percent Error", "Point Density", "Radius", 
 df_filtered.loc[:, numeric_columns] = df_filtered[numeric_columns].apply(pd.to_numeric, errors="coerce")
 
 # Remove rows where Percent Error is greater than 10%
-df_filtered = df_filtered[df_filtered["Percent Error"] <= 1]
+df_filtered = df_filtered[df_filtered["Percent Error"] <= 100]
 
 # Remove perturbed rows
 df_filtered = df_filtered[df_filtered["Perturbed"] == False]
@@ -29,10 +31,6 @@ if "Shape" in df_filtered.columns:
 else:
     print("Error: 'Shape' column is missing! Cannot create 'Base Shape'.")
     exit()
-
-# Specify shape types to omit (both perturbed & unperturbed)
-# omit_shapes = ["torus"]  # Example: Omitting torus and egg_carton
-# df_filtered = df_filtered[~df_filtered["Base Shape"].isin(omit_shapes)]
 
 # Compute Theoretical Mean Curvature Squared
 def compute_theoretical_mean_curvature_squared(shape, radius):
@@ -84,9 +82,6 @@ df_filtered = df_filtered.copy()
 df_filtered.loc[:, numeric_columns] = df_filtered[numeric_columns].apply(pd.to_numeric, errors="coerce")
 
 # Generate scatter plots for Percent Error vs everything else
-# Generate scatter plots for Percent Error vs everything else
-# Generate line plots for Percent Error vs everything else
-# Generate line plots for Percent Error vs everything else
 for x_col, y_col in column_pairs:
     if df_filtered.empty:
         print(f"Warning: df_filtered is empty. Skipping plot for {y_col} vs {x_col}.")
@@ -96,7 +91,6 @@ for x_col, y_col in column_pairs:
         print(f"Warning: Column {x_col} or {y_col} not found in df_filtered. Skipping plot.")
         continue
 
-    # Remove NaN values
     df_filtered_subset = df_filtered.dropna(subset=[x_col, y_col])
 
     num_unique_x = df_filtered_subset[x_col].nunique()
@@ -108,24 +102,38 @@ for x_col, y_col in column_pairs:
 
     plt.figure(figsize=(12, 6))
 
-    # Split into perturbed and unperturbed groups
+    # Find all unique shape-radius combinations
+    shape_radius_combinations = df_filtered_subset[['Base Shape', 'Radius']].drop_duplicates()
+    shape_radius_combinations = shape_radius_combinations.sort_values(['Base Shape', 'Radius']).reset_index(drop=True)
+
+    num_colors = len(shape_radius_combinations)
+    color_map = cm.get_cmap('tab20', num_colors)  # You can choose other colormaps like 'tab20', 'hsv', 'jet', etc.
+
+    # Create a mapping from (shape, radius) to color
+    color_dict = {
+        (row['Base Shape'], row['Radius']): color_map(i)
+        for i, row in shape_radius_combinations.iterrows()
+    }
+
+    # Plot each group separately
     for perturbed_status, df_perturbed in df_filtered_subset.groupby("Perturbed"):
-        marker_style = "o" if perturbed_status else "s"  # Use different markers for clarity
+        marker_style = "o" if perturbed_status else "s"
         linestyle = "--" if perturbed_status else "-"
 
-        # Loop through each shape and radius group
         for (shape, radius), group in df_perturbed.groupby(["Base Shape", "Radius"]):
-            group = group.sort_values(by="Num Points")  # Sort by Num Points for trend lines
-            
-            # Plot line for each shape-radius combination
-            plt.plot(group[x_col], group[y_col], marker=marker_style, linestyle=linestyle,
-                     alpha=0.7, label=f"{shape} (R={radius}, {'Perturbed' if perturbed_status else 'Unperturbed'})")
+            group = group.sort_values(by="Num Points")
+
+            plt.plot(group[x_col], group[y_col],
+                     marker=marker_style,
+                     linestyle=linestyle,
+                     alpha=0.7,
+                     color=color_dict[(shape, radius)],
+                     label=f"{shape} (R={radius}, {'Perturbed' if perturbed_status else 'Unperturbed'})")
 
     if log:
         plt.xscale("log")
         plt.yscale("log")
 
-        # Compute min/max with an offset
         x_min, x_max = df_filtered_subset[x_col].min(), df_filtered_subset[x_col].max()
         y_min, y_max = df_filtered_subset[y_col].min(), df_filtered_subset[y_col].max()
 

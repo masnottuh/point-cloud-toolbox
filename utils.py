@@ -456,7 +456,7 @@ def average_distance_using_kd_tree(pcd):
     logging.info(f"Computed average distance: {average_distance}")
 
     # Define BPA radii dynamically based on the point cloud's scale
-    radii_list = np.linspace(0.025 * average_distance, 10*average_distance, 25)
+    radii_list = np.linspace(0.025 * average_distance, 5*average_distance, 25)
 
     return {'average_distance': average_distance, 'radii_list': radii_list}
 
@@ -768,19 +768,18 @@ def generate_pv_shapes(shape_name, num_points=10000, perturbation_strength=0.0, 
         return points
 
     def generate_cylinder_points(num_points):
-        """ Generates a unit-radius cylinder. """
-        height = 2
-        num_height_points = int(np.sqrt(num_points * height / (2 * np.pi + height)))
-        num_circumference_points = num_points // num_height_points
+        """Generates a unit-radius cylinder with more uniformly distributed points using a Fibonacci spiral."""
+        height = 2  # Cylinder height
+        golden_ratio = (1 + np.sqrt(5)) / 2  # Golden ratio for better spacing
+        dz = height / num_points  # Uniform height spacing
 
-        z = np.linspace(-height / 2, height / 2, num_height_points)
-        theta = np.linspace(0, 2 * np.pi, num_circumference_points, endpoint=False)
-        theta, z = np.meshgrid(theta, z)
+        z = np.linspace(-height / 2 + dz / 2, height / 2 - dz / 2, num_points)  # Avoid edge clumping
+        theta = 2 * np.pi * np.arange(num_points) / golden_ratio  # Spiral pattern
 
         x = np.cos(theta)
         y = np.sin(theta)
-        points = np.vstack([x.ravel(), y.ravel(), z.ravel()]).T
-        bbox_size = np.ptp(points, axis=0).max()
+
+        points = np.vstack((x, y, z)).T
         return points
 
     def generate_torus_points(num_points):
