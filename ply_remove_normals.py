@@ -18,6 +18,6 @@ def convert_ply_to_xyz(input_file, output_file):
     print(f"Converted PLY file saved to {output_file}")
 
 # Usage example
-input_ply_file = "Scans/5th_unbind_9_5_2024_CR.ply"  # Replace with the actual input PLY file name
-output_ply_file = "no_normals_5th_unbind_9_5_2024_CR.ply"  # Replace with the desired output PLY file name
+input_ply_file = "Scans/UState_Pos134.082_Trial1_1.ply"  # Replace with the actual input PLY file name
+output_ply_file = "Scans/NN_UState_Pos134.082_Trial1_1.ply"  # Replace with the desired output PLY file name
 convert_ply_to_xyz(input_ply_file, output_ply_file)

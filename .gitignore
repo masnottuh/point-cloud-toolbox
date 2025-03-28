@@ -13,6 +13,7 @@ literature/
 kong_toy_plots/
 s-ridge_plots/
 sphere_plots/
+curvature_data/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

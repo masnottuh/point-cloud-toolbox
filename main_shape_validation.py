@@ -39,7 +39,7 @@ with keep.running():
     os.makedirs(test_shapes_dir, exist_ok=True)
 
     radius_values = [0.1, 1, 10, 100, 1000]  # Logarithmic sweep from 0.1 to 1000
-    target_num_points = [500000]
+    target_num_points = [1000, 5000, 10000]
 
     results = []
 
@@ -79,7 +79,7 @@ with keep.running():
                 for variant, filename, perturbed_flag in [("Unperturbed", shape_filename, False), 
                                                         ("Perturbed", shape_perturbed_filename, True)]:
                     try:
-                        bending_energy, stretching_energy, computed_area = validate_shape(filename, "N", shape_name, variant)
+                        bending_energy, stretching_energy, computed_area = validate_shape(filename, "N", shape_name, variant, radius)
                     except Exception as e:
                         logging.error(f"Error processing {shape_name} ({variant}): {e}")
                         bending_energy, stretching_energy, computed_area = "Error", "Error", "Error"

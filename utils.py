@@ -463,7 +463,7 @@ def average_distance_using_kd_tree(pcd):
 
 
 ##################################
-def validate_shape(file_path, flag, shape_name, variant):
+def validate_shape(file_path, flag, shape_name, variant, radius):
     logging.info("Inside validate_shape()")
     temp_file_path, mesh = create_mesh_with_curvature(file_path, shape_name, variant)
 
@@ -484,8 +484,31 @@ def validate_shape(file_path, flag, shape_name, variant):
         print("Calculating quadratic surfaces")
         pcl.fit_explicit_quadratic_surfaces_to_neighborhoods()
 
+        # Ensure KD-Tree is planted with calculated num neighbors
+        pcl.plant_kdtree(k_neighbors=converged_neighbors_int)
+
         print("Calculating quadratic curvatures")
         gaussian_curvature, mean_curvature = pcl.calculate_curvatures_of_explicit_quadratic_surfaces_for_all_points()
+        # Save Gaussian and Mean curvature data explicitly
+        # Save Gaussian and Mean curvature data explicitly for each mesh
+        curvature_output_dir = "./curvature_data"
+        os.makedirs(curvature_output_dir, exist_ok=True)
+
+        curvature_filename_gaussian = os.path.join(
+            curvature_output_dir,
+            f"{shape_name}_{variant}_radius_{radius}_points_{len(gaussian_curvature)}_gaussian.npy"
+        )
+
+        curvature_filename_mean = os.path.join(
+            curvature_output_dir,
+            f"{shape_name}_{variant}_radius_{radius}_points_{len(mean_curvature)}_mean.npy"
+        )
+
+        np.save(curvature_filename_gaussian, gaussian_curvature)
+        np.save(curvature_filename_mean, mean_curvature)
+
+        print(f"Saved curvature data to {curvature_output_dir}")
+
 
         # Check NaN values
         num_nan_gaussian = np.sum(np.isnan(gaussian_curvature))

@@ -64,7 +64,7 @@ class PointCloud:
 
     def plant_kdtree(self, k_neighbors):
         self.k_neighbors = k_neighbors
-        box_size = [int(np.ceil(self.voxel_size*self.k_neighbors)/2), int(np.ceil(self.voxel_size*self.k_neighbors)/2)]
+        # box_size = [int(np.ceil(self.voxel_size*self.k_neighbors)/2), int(np.ceil(self.voxel_size*self.k_neighbors)/2)]
 
         # self.kdtree = sp.spatial.cKDTree(self.points, box_size) #to use box size for even distribution, CURRENTLY BROKEN
         self.kdtree = sp.spatial.cKDTree(np.array(self.points))
@@ -384,36 +384,39 @@ class PointCloud:
 
     @staticmethod
     def calculate_explicit_quadratic_curvatures(coefficients):
-
-        # x = point[0]
-        # y = point[1]
-
-        x = 0
-        y = 0
-
         a, b, c, d, e, f = coefficients
 
-        # parametric surface
-        F = a*(x**2) + b*(y**2) + c*(x*y) + d*(x) + e*(y) + f
+        # First derivatives at the origin (0,0)
+        Fx = d
+        Fy = e
 
-        Fx = 2*a*x + c*y + d
-        Fxx = 2*a
-        Fy = 2*b*y + c*x + e
-        Fyy = 2*b
+        # Second derivatives
+        Fxx = 2 * a
+        Fyy = 2 * b
         Fxy = c
 
-        # mean and gaussian curvatures 
-        # https://en.wikipedia.org/wiki/Gaussian_curvature
-        # https://en.wikipedia.org/wiki/Mean_curvature
-        K_g = (Fxx*Fyy - Fxy**2)/((1 + Fx**2 + Fy**2)**2)
-        K_h = ((1+Fx**2)*(Fyy)-2*Fx*Fy*Fxy+(1+Fy**2)*Fxx)/(2*((1+Fx**2+Fy**2)**(3/2)))
+        # Mean and Gaussian curvature at (0,0)
+        denominator_gaussian = (1 + Fx**2 + Fy**2)**2
+        denominator_mean = (1 + Fx**2 + Fy**2)**1.5
+
+        # Gaussian curvature
+        K_g = (Fxx * Fyy - Fxy**2) / denominator_gaussian
+
+        # Mean curvature
+        K_h = ((1 + Fx**2) * Fyy - 2 * Fx * Fy * Fxy + (1 + Fy**2) * Fxx) / (2 * denominator_mean)
+
+        # Mean curvature squared
         K_h_sq = K_h**2
 
-        # principal Curvatures
-        k1 = K_h + np.sqrt(K_h**2 - K_g)
-        k2 = K_h- np.sqrt(K_h**2 - K_g)
+        # Principal curvatures (with absolute value in sqrt to avoid negative under-root)
+        discriminant = max(K_h**2 - K_g, 0)
+        sqrt_discriminant = np.sqrt(discriminant)
+
+        k1 = K_h + sqrt_discriminant
+        k2 = K_h - sqrt_discriminant
 
         return K_g, K_h, k1, k2, K_h_sq
+
 
     @staticmethod
     def calculate_implicit_quadric_curvatures(coefficients):
@@ -485,6 +488,19 @@ class PointCloud:
 
         pickle.dump(fig, open(f'{self.output_path}nearest_neighbors_k_{self.k_neighbors}_voxel_size_{self.voxel_size}.pickle', 'wb'))
         # plt.show()
+
+    def compute_pointwise_explicit_quadratic_curvature(self):
+        """Compute explicit quadratic curvature and return pointwise values."""
+        self.fit_explicit_quadratic_surfaces_to_neighborhoods()
+        K, H = self.calculate_curvatures_of_explicit_quadratic_surfaces_for_all_points()
+        return np.array(K), np.array(H)
+
+    def compute_pointwise_implicit_quadric_curvature(self):
+        """Compute implicit quadric curvature and return pointwise values."""
+        self.fit_implicit_quadric_surfaces_all_points()
+        self.calculate_curvatures_of_implicit_quadric_surfaces_for_all_points()
+        return np.array(self.K_quadric), np.array(self.H_quadric)
+
 
     def plot_points_colored_by_quadric_curvatures(self):
 
@@ -748,7 +764,7 @@ class PointCloud:
                     maxk = max(test_results[point[0]]['gaussian'][-6:]) #Using gaussian to ensure convergence in principal_1 and p2 directions
                     mink = min(test_results[point[0]]['gaussian'][-6:])
                     difference = abs(round(maxk - mink))
-                    if difference < 1e-6:
+                    if difference < 1e-7:
                         explicit_converged_neighbors.append(num_neighbors)
                         break
                     else:
