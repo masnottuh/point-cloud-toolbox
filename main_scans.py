@@ -41,7 +41,7 @@ for filepath in existing_ply_files:
     # Process the existing file
     try:
         variant = "none"
-        bending_energy, stretching_energy, computed_area = validate_shape(filepath, "Y", shape_name, variant)
+        bending_energy, stretching_energy, computed_area = validate_shape(filepath, "Y", shape_name, variant, None)
         logging.info(f"Processed {shape_name}: Bending Energy: {bending_energy}, Stretching Energy: {stretching_energy}, Computed Area: {computed_area}")
     except Exception as e:
         logging.error(f"Error processing {shape_name}: {e}")
