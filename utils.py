@@ -738,29 +738,19 @@ def load_mesh_compute_energies(mesh):
 
     for i, tri in enumerate(triangles):
         verts = np.array(tri)
-        face_center = np.mean(vertices[verts], axis=0)
 
-        # Calculate distances from each vertex to the face center
-        distances = np.linalg.norm(vertices[verts] - face_center, axis=1)
-        if np.sum(distances) == 0:
-            logging.warning(f"Degenerate face detected at index {i}, skipping.")
-            continue  # Skip bad faces
+        face_gaussian[i] = np.mean(gaussian_curvature[verts])
+        face_mean[i] = np.mean(mean_curvature[verts])
+        face_mean_squared[i] = np.mean(mean_squared[verts])
 
-        weights = distances / np.sum(distances)
+        # Compute Energies
+        bending_energy = np.nansum(face_mean_squared * areas)
+        stretching_energy = np.nansum(face_gaussian * areas)
+        total_area = np.sum(areas)
 
-        # Handle missing curvature data
-        face_gaussian[i] = np.sum(weights * gaussian_curvature[verts]) if gaussian_curvature.size > 0 else 0
-        face_mean[i] = np.sum(weights * mean_curvature[verts]) if mean_curvature.size > 0 else 0
-        face_mean_squared[i] = np.sum(weights * mean_squared[verts]) if mean_squared.size > 0 else 0
-
-    # Compute Energies
-    bending_energy = np.nansum(face_mean_squared * areas)
-    stretching_energy = np.nansum(face_gaussian * areas)
-    total_area = np.sum(areas)
-
-    logging.info(f"Computed Bending Energy: {bending_energy}, Stretching Energy: {stretching_energy}, Area: {total_area}")
-    logging.info("Exiting load_mesh_compute_energies()")
-    
+        logging.info(f"Computed Bending Energy: {bending_energy}, Stretching Energy: {stretching_energy}, Area: {total_area}")
+        logging.info("Exiting load_mesh_compute_energies()")
+        
     return bending_energy, stretching_energy, total_area
 
 ##################################

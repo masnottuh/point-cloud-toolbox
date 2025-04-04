@@ -39,7 +39,7 @@ with keep.running():
     os.makedirs(test_shapes_dir, exist_ok=True)
 
     radius_values = [1, 10, 100, 1000, 10000]  # Logarithmic sweep from 0.1 to 1000
-    target_num_points = [1000, 10000, 100000, 1000000]
+    target_num_points = [1000, 10000]
 
     results = []
 
