@@ -748,8 +748,8 @@ def load_mesh_compute_energies(mesh):
         stretching_energy = np.nansum(face_gaussian * areas)
         total_area = np.sum(areas)
 
-        logging.info(f"Computed Bending Energy: {bending_energy}, Stretching Energy: {stretching_energy}, Area: {total_area}")
-        logging.info("Exiting load_mesh_compute_energies()")
+    logging.info(f"Computed Bending Energy: {bending_energy}, Stretching Energy: {stretching_energy}, Area: {total_area}")
+    logging.info("Exiting load_mesh_compute_energies()")
         
     return bending_energy, stretching_energy, total_area
 

@@ -32,7 +32,6 @@ results = []
 # .ply files in the directory
 existing_ply_files = glob.glob(f"{test_shapes_dir}/*.ply")
 
-
  # Process .ply files
 for filepath in existing_ply_files:
     shape_name = os.path.basename(filepath).split(".")[0]

@@ -26,6 +26,21 @@ def compute_egg_carton_surface_area(radius):
     area, _ = dblquad(egg_carton_surface_element, -radius, radius, lambda x: -radius, lambda x: radius)
     return area
 
+theoretical_bending_energy_funcs = {
+    "sphere": lambda r: 4 * np.pi,
+    "cylinder": lambda r: np.pi,
+    "torus": lambda r: np.nan,        # requires numeric integration
+    "egg_carton": lambda r: np.nan    # requires numeric integration
+}
+
+theoretical_stretching_energy_funcs = {
+    "sphere": lambda r: 4 * np.pi,
+    "cylinder": lambda r: 0,
+    "torus": lambda r: 0,
+    "egg_carton": lambda r: np.nan    # requires numeric integration
+}
+
+
 # Keep awake for long tests
 with keep.running():
     csv_filename = "incremental_shape_comparison_results.csv"
@@ -38,8 +53,8 @@ with keep.running():
     os.makedirs(output_dir, exist_ok=True)
     os.makedirs(test_shapes_dir, exist_ok=True)
 
-    radius_values = [1, 10, 100, 1000, 10000]  # Logarithmic sweep from 0.1 to 1000
-    target_num_points = [1000, 10000]
+    radius_values = [1, 10, 100, 1000]
+    target_num_points = [1000000]
 
     results = []
 
@@ -53,23 +68,21 @@ with keep.running():
 
         for shape_name, shape_area_func in shape_area_funcs.items():
             densities = [compute_density_for_target_points(radius, n, shape_area_func) for n in target_num_points]
-            densities = [d for d in densities if d is not None]  # Filter out invalid densities
+            densities = [d for d in densities if d is not None]
 
             for density, num_points in zip(densities, target_num_points):
                 logging.info(f"Testing {shape_name} with radius {radius}, density {density}, num_points {num_points}")
 
                 theoretical_area = shape_area_func(radius)
+                theoretical_bending_energy = theoretical_bending_energy_funcs[shape_name](radius)
+                theoretical_stretching_energy = theoretical_stretching_energy_funcs[shape_name](radius)
+
                 perturbation_strength = 0.001 * np.sqrt(theoretical_area)
 
-                # Generate both normal and perturbed shape point clouds
                 shape, shape_perturbed = generate_pv_shapes(
                     shape_name, num_points=num_points, perturbation_strength=perturbation_strength, radius=radius
                 )
 
-                logging.info(f"Requested {num_points} points for {shape_name}, but generated {len(shape.points)} points.")
-                logging.info(f"Perturbed shape has {len(shape_perturbed.points)} points.")
-
-                # Save both unperturbed and perturbed shapes
                 shape_filename = f"{test_shapes_dir}/{shape_name}_radius_{radius}_points_{num_points}.ply"
                 shape_perturbed_filename = f"{test_shapes_dir}/{shape_name}_radius_{radius}_points_{num_points}_perturbed.ply"
 
@@ -84,11 +97,7 @@ with keep.running():
                         logging.error(f"Error processing {shape_name} ({variant}): {e}")
                         bending_energy, stretching_energy, computed_area = "Error", "Error", "Error"
 
-                    try:
-                        computed_area = float(computed_area)
-                    except ValueError:
-                        computed_area = float('nan')
-
+                    computed_area = float(computed_area) if computed_area != "Error" else float('nan')
                     percent_error = 100 * abs((theoretical_area - computed_area) / theoretical_area) if theoretical_area > 0 else float('nan')
 
                     results.append({
@@ -101,14 +110,14 @@ with keep.running():
                         "Percent Error": percent_error,
                         "Bending Energy": bending_energy,
                         "Stretching Energy": stretching_energy,
-                        "Perturbed": perturbed_flag  # Flag to indicate perturbed vs. unperturbed
+                        "Theoretical Bending Energy": theoretical_bending_energy,
+                        "Theoretical Stretching Energy": theoretical_stretching_energy,
+                        "Perturbed": perturbed_flag
                     })
 
-                    # Save incremental results
                     results_df = pd.DataFrame([results[-1]])
                     results_df.to_csv(csv_filename, mode='a', header=not csv_exists, index=False)
                     csv_exists = True
-
 
     print("Testing completed.")
     pd.DataFrame(results).to_csv("backup_shape_comparison_results.csv", index=False)
