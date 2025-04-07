@@ -1,7 +1,7 @@
 import open3d as o3d
 import os
 
-def downsample_point_cloud(input_ply_file, output_ply_file, voxel_size=0.1):
+def downsample_point_cloud(input_ply_file, output_ply_file, voxel_size=1):
     # Load the point cloud from the PLY file
     pcd = o3d.io.read_point_cloud(input_ply_file)
     print(f"Original point cloud has {len(pcd.points)} points.")
@@ -11,21 +11,22 @@ def downsample_point_cloud(input_ply_file, output_ply_file, voxel_size=0.1):
     print(f"Downsampled point cloud has {len(downsampled_pcd.points)} points.")
     
     # Save the downsampled point cloud to a new PLY file
-    o3d.io.write_point_cloud(output_ply_file, downsampled_pcd)
+    o3d.io.write_point_cloud(output_ply_file, downsampled_pcd, write_ascii=True)
+
     print(f"Downsampled point cloud saved to {output_ply_file}")
 
 if __name__ == "__main__":
     # Directory containing the input files
-    input_dir = "test_shapes"
-    output_dir = "test_shapes/downsampled"
-    voxel_size = 0.1  # Adjust the voxel size based on the desired downsampling level
+    input_dir = "Scans/"
+    output_dir = "Scans/"
+    voxel_size = 1.5  # Adjust the voxel size based on the desired downsampling level
 
     # Create the output directory if it doesn't exist
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
     # List of all .ply files in the input directory
-    ply_files = ["5th_unbind_9_5_2024_CR.ply"]
+    ply_files = ["NN_BIGcylinder_Cropped.ply", "NN_cylinder.ply"]
 
     # Loop over each PLY file and apply the downsampling
     for ply_file in ply_files:

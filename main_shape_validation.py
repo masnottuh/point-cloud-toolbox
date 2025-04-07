@@ -53,16 +53,16 @@ with keep.running():
     os.makedirs(output_dir, exist_ok=True)
     os.makedirs(test_shapes_dir, exist_ok=True)
 
-    radius_values = [1, 10, 100, 1000]
+    radius_values = [1]
     target_num_points = [1000000]
 
     results = []
 
     for radius in radius_values:
         shape_area_funcs = {
-            "sphere": lambda r: 4.0 * np.pi * (r ** 2.0),
-            "cylinder": lambda r: 2.0 * (np.pi * r * (2 * r)),
-            "torus": lambda r: (2 * np.pi * r) * (2 * np.pi * (r / 3)),
+            # "sphere": lambda r: 4.0 * np.pi * (r ** 2.0),
+            # "cylinder": lambda r: 2.0 * (np.pi * r * (2 * r)),
+            # "torus": lambda r: (2 * np.pi * r) * (2 * np.pi * (r / 3)),
             "egg_carton": compute_egg_carton_surface_area
         }
 
