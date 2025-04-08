@@ -308,7 +308,7 @@ def create_mesh_with_curvature(file_path, shape_name, variant):
 
 
     # Clean the mesh after filling
-    mesh = mesh.filter_smooth_taubin(number_of_iterations=1)
+    mesh = mesh.filter_smooth_taubin(number_of_iterations=10)
     mesh.remove_degenerate_triangles()
     mesh.remove_unreferenced_vertices()
     mesh.remove_non_manifold_edges()

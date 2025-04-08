@@ -19,14 +19,14 @@ if __name__ == "__main__":
     # Directory containing the input files
     input_dir = "Scans/"
     output_dir = "Scans/"
-    voxel_size = 1.5  # Adjust the voxel size based on the desired downsampling level
+    voxel_size = 0.4  # Adjust the voxel size based on the desired downsampling level
 
     # Create the output directory if it doesn't exist
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
     # List of all .ply files in the input directory
-    ply_files = ["NN_BIGcylinder_Cropped.ply", "NN_cylinder.ply"]
+    ply_files = ["NN_u_state5_3_full_C.ply"]
 
     # Loop over each PLY file and apply the downsampling
     for ply_file in ply_files:
