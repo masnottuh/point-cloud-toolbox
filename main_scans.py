@@ -13,6 +13,9 @@ import subprocess
 import sys
 from scipy.integrate import dblquad
 import glob
+import cProfile
+import pstats
+from wakepy import keep
 
 ##################################
 logging.basicConfig(level=logging.INFO)
@@ -32,31 +35,39 @@ results = []
 # .ply files in the directory
 existing_ply_files = glob.glob(f"{test_shapes_dir}/*.ply")
 
- # Process .ply files
-for filepath in existing_ply_files:
-    shape_name = os.path.basename(filepath).split(".")[0]
-    logging.info(f"Processing existing .ply file: {shape_name}")
 
-    # Process the existing file
-    try:
-        variant = "none"
-        bending_energy, stretching_energy, computed_area = validate_shape(filepath, "Y", shape_name, variant, None)
-        logging.info(f"Processed {shape_name}: Bending Energy: {bending_energy}, Stretching Energy: {stretching_energy}, Computed Area: {computed_area}")
-    except Exception as e:
-        logging.error(f"Error processing {shape_name}: {e}")
-        bending_energy, stretching_energy, computed_area = "Error", "Error", "Error"
+def main():
+    # Process .ply files
+    for filepath in existing_ply_files:
+        shape_name = os.path.basename(filepath).split(".")[0]
+        logging.info(f"Processing existing .ply file: {shape_name}")
 
-    # Append results (no theoretical area for pre-existing shapes)
-    results.append({
-        "Shape": shape_name,
-        "Num Points": "N/A",
-        "Computed Area": computed_area,
-        "Bending Energy": bending_energy,
-        "Stretching Energy": stretching_energy
-    })
+        # Process the existing file
+        try:
+            variant = "none"
+            bending_energy, stretching_energy, computed_area = validate_shape(filepath, "Y", shape_name, variant, None)
+            logging.info(f"Processed {shape_name}: Bending Energy: {bending_energy}, Stretching Energy: {stretching_energy}, Computed Area: {computed_area}")
+        except Exception as e:
+            logging.error(f"Error processing {shape_name}: {e}")
+            bending_energy, stretching_energy, computed_area = "Error", "Error", "Error"
 
-# # Save results to a DataFrame and display
-results_df = pd.DataFrame(results)
+        # Append results (no theoretical area for pre-existing shapes)
+        results.append({
+            "Shape": shape_name,
+            "Num Points": "N/A",
+            "Computed Area": computed_area,
+            "Bending Energy": bending_energy,
+            "Stretching Energy": stretching_energy
+        })
 
-# Save results to CSV
-results_df.to_csv(f"shape_comparison_results.csv", index=False)
+    # # Save results to a DataFrame and display
+    results_df = pd.DataFrame(results)
+
+    # Save results to CSV
+    results_df.to_csv(f"scans_results.csv", index=False)
+
+with keep.running():
+    cProfile.run('main()', 'profile_stats')
+    # Print results
+    p = pstats.Stats('profile_stats')
+    p.strip_dirs().sort_stats('cumtime').print_stats(20)

@@ -359,18 +359,13 @@ def create_mesh_with_curvature(file_path, shape_name, variant):
     # Get number of points and current timestamp
     num_points = len(pv_mesh.points)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    # Save as a VTK PolyData file (.vtp is also an option)
+    filename = os.path.join(output_dir, f"mesh_{num_points}_points_{timestamp}_{shape_name}_{variant}.vtk")
 
-    # Construct the filename
-    filename = os.path.join(output_dir, f"mesh_{num_points}_points_{timestamp}_{shape_name}_{variant}.png")
+    # Save the full mesh to file
+    pv_mesh.save(filename)
 
-    # Create PyVista plotter and save the screenshot
-    plotter = pv.Plotter(off_screen=True)
-    plotter.add_mesh(pv_mesh, show_edges=True, color="lightblue")
-    plotter.set_background("white")
-    plotter.screenshot(filename)
-    plotter.close()
-
-    logging.info(f"Mesh screenshot saved as {filename}")
+    logging.info(f"Mesh saved in VTK format as {filename}")
 
     # Save the mesh vertices to a temporary file
     logging.info("Saving PyVista mesh vertices to a temporary file...")

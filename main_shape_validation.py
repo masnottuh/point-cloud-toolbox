@@ -58,7 +58,7 @@ with keep.running():
     os.makedirs(test_shapes_dir, exist_ok=True)
 
     # List of target numbers of points to test (outer loop).
-    target_num_points = [1000000,5000000]  # You can add more values here if needed.
+    target_num_points = [200000, 300000, 400000, 500000, 1000000]  # You can add more values here if needed.
     # List of radii values to test.
     radius_values = [0.1, 10, 1000]
 
