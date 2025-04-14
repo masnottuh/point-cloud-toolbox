@@ -13,6 +13,9 @@ import os
 from datetime import datetime
 import scipy
 import networkx as nx
+import gc
+from memory_profiler import profile
+
 
 def create_mesh_with_curvature(file_path, shape_name, variant):
 
@@ -40,6 +43,8 @@ def create_mesh_with_curvature(file_path, shape_name, variant):
     points = parse_ply(file_path)
     if points is None:
         raise ValueError("Failed to parse the PLY file.")
+    
+    points = points.astype(np.float32)
 
     # Create Open3D PointCloud object
     pcd = o3d.geometry.PointCloud()
@@ -146,6 +151,9 @@ def create_mesh_with_curvature(file_path, shape_name, variant):
     boundary_loops = detect_boundary_loops(mesh)
 
     for loop in boundary_loops:
+
+        gc.collect()
+
         if not loop:
             logging.warning("Empty boundary loop encountered. Skipping.")
             continue
@@ -316,7 +324,12 @@ def create_mesh_with_curvature(file_path, shape_name, variant):
     # Convert back to PyVista mesh
     vertices = np.asarray(mesh.vertices)
     triangles = np.asarray(mesh.triangles)
-    faces = np.hstack([[3] + list(tri) for tri in triangles])
+    num_triangles = len(triangles)
+    faces = np.empty((num_triangles, 4), dtype=np.int32)
+    for i, tri in enumerate(triangles):
+        faces[i, 0] = 3
+        faces[i, 1:] = tri
+    faces = faces.flatten()
     pv_mesh = pv.PolyData(vertices, faces)
     logging.info("Filling small holes in the mesh...")
     
@@ -429,11 +442,14 @@ def detect_boundary_loops(mesh):
 
 
 ##################################
+
 def average_distance_using_kd_tree(pcd):
     logging.info("Calculating average distance between points")
 
     # Convert Open3D PointCloud to a numpy array
     points = np.asarray(pcd.points)
+    points = points.astype(np.float32)
+
     num_points = points.shape[0]
 
     if num_points < 2:
@@ -447,10 +463,8 @@ def average_distance_using_kd_tree(pcd):
     tree = KDTree(points)
 
     # Calculate average distance to the nearest neighbor
-    distances = []
-    for point in sampled_points:
-        dist, _ = tree.query(point, k=2)  # k=2 includes the point itself
-        distances.append(dist[1])  # Exclude the point itself
+    dists, _ = tree.query(sampled_points, k=2)
+    distances = dists[:, 1]
 
     average_distance = np.mean(distances)
     logging.info(f"Computed average distance: {average_distance}")
@@ -463,6 +477,7 @@ def average_distance_using_kd_tree(pcd):
 
 
 ##################################
+
 def validate_shape(file_path, flag, shape_name, variant, radius):
     logging.info("Inside validate_shape()")
     temp_file_path, mesh = create_mesh_with_curvature(file_path, shape_name, variant)
@@ -688,6 +703,7 @@ def convert_pv_to_o3d(pv_mesh):
     return o3d_mesh
 
 ##################################
+
 def load_mesh_compute_energies(mesh):
     o3d_mesh = convert_pv_to_o3d(mesh)
     logging.info("Inside load_mesh_compute_energies()")
@@ -753,23 +769,98 @@ def load_mesh_compute_energies(mesh):
         
     return bending_energy, stretching_energy, total_area
 
-##################################
-def generate_pv_shapes(shape_name, num_points=10000, perturbation_strength=0.0, radius=10.0):
+def get_characteristic_scale(points):
     """
-    Generates a 3D shape as a point cloud and perturbs it proportionally to geometry size & point density.
+    Compute a characteristic scale of the shape.
+    Here we use the maximum distance from the centroid.
+    This value adapts to shapes that are not naturally spherical.
     """
+    centroid = np.mean(points, axis=0)
+    distances = np.linalg.norm(points - centroid, axis=1)
+    return np.max(distances)
 
-    bbox_fraction = 0.0001
+
+def estimate_curvature(points, k_fraction=0.025, max_neighbors=100):
+    """
+    Vectorized estimation of curvature for each point using PCA on local neighbors.
+    
+    Uses batch processing to compute covariance matrices and eigenvalues for all 
+    neighborhoods simultaneously, which is significantly faster than looping 
+    over points in Python.
+    
+    Parameters
+    ----------
+    points : np.ndarray
+        Array of shape (num_points, dim) in float32.
+    k_fraction : float
+        Fraction of total points to use as neighbors (capped at max_neighbors).
+    max_neighbors : int
+        Maximum neighbors to use; set to a fixed value to avoid huge arrays.
+    
+    Returns
+    -------
+    curvatures : np.ndarray
+        Array of shape (num_points,) with curvature values computed as the 
+        ratio of the smallest eigenvalue of the local covariance matrix to 
+        the sum of eigenvalues.
+    """
+    from sklearn.neighbors import NearestNeighbors
+
+    num_points = len(points)
+    # Use a fixed number of neighbors: cap it at max_neighbors
+    k = min(max(5, int(k_fraction * num_points)), max_neighbors)
+    
+    # Build the KDTree and get k neighbors for all points
+    nbrs = NearestNeighbors(n_neighbors=k).fit(points)
+    # dists shape: (num_points, k); indices shape: (num_points, k)
+    dists, indices = nbrs.kneighbors(points)
+    
+    # Gather neighbor points for each point: shape -> (num_points, k, dim)
+    neighbors = points[indices]
+    
+    # Compute the mean of each neighborhood along axis 1 and subtract (broadcast)
+    means = neighbors.mean(axis=1, keepdims=True)
+    centered = neighbors - means  # shape: (num_points, k, dim)
+    
+    # Compute covariance matrices using einsum: each covariance is (dim, dim)
+    cov = np.einsum('nik,njk->nij', centered, centered) / (k - 1)
+    
+    # Compute eigenvalues for each covariance matrix (batched)
+    eigenvalues, _ = np.linalg.eigh(cov)  # shape: (num_points, dim)
+    # Since np.linalg.eigh returns eigenvalues in ascending order, the smallest is eigenvalues[:,0]
+    sums = np.sum(eigenvalues, axis=1)
+    curvatures = eigenvalues[:, 0] / (sums + 1e-10)
+    
+    return curvatures
 
 
-    def add_noise(points, noise_level):
 
-        """ Adds small random noise to the points. """
-        noise = np.random.uniform(0, noise_level, size=points.shape)
-        return points + noise
-
+def generate_pv_shapes(shape_name, num_points=10000, 
+                         perturbation_strength=0.001, desired_scale=10.0, 
+                         k_fraction=0.01, **kwargs):
+    """
+    Generates a 3D shape as a point cloud and applies adaptive perturbation.
+    
+    The unit shape generators are defined with the following dimensions:
+      - sphere: unit sphere (radius 1)
+      - cylinder: circle in the x-y plane of radius 1 and z ∈ [–1, 1] (height = 2)
+      - torus: major radius 1 and tube radius 1/3
+      - egg_carton: grid over [–1, 1] × [–1, 1] with z = 0.1 * sin(pi*x)*cos(pi*y)
+    
+    These are then uniformly scaled by the factor 'desired_scale' so that:
+      - For a sphere, the final radius = desired_scale.
+      - For a cylinder, the final base radius = desired_scale and height = 2*desired_scale.
+      - For a torus, the final major radius = desired_scale and tube radius = desired_scale/3.
+      - For egg_carton, the (x,y) domain becomes [–desired_scale, desired_scale].
+      
+    Accepts "radius" as an alias for desired_scale for backward compatibility.
+    """
+    # Allow backward compatibility: 'radius' overrides desired_scale.
+    if 'radius' in kwargs:
+        desired_scale = kwargs.pop('radius')
+    
+    # --- Shape Generation Functions ---
     def generate_sphere_points(num_points):
-        """ Generates a sphere at radius = 1. """
         indices = np.arange(0, num_points, dtype=float) + 0.5
         phi = np.arccos(1 - 2 * indices / num_points)
         theta = np.pi * (1 + np.sqrt(5)) * indices
@@ -777,102 +868,102 @@ def generate_pv_shapes(shape_name, num_points=10000, perturbation_strength=0.0, 
         y = np.sin(theta) * np.sin(phi)
         z = np.cos(phi)
         points = np.vstack((x, y, z)).T
-        bbox_size = np.ptp(points, axis=0).max()
         return points
 
     def generate_cylinder_points(num_points):
-        """Generates a unit-radius cylinder with more uniformly distributed points using a Fibonacci spiral."""
-        height = 2  # Cylinder height
-        golden_ratio = (1 + np.sqrt(5)) / 2  # Golden ratio for better spacing
-        dz = height / num_points  # Uniform height spacing
-
-        z = np.linspace(-height / 2 + dz / 2, height / 2 - dz / 2, num_points)  # Avoid edge clumping
-        theta = 2 * np.pi * np.arange(num_points) / golden_ratio  # Spiral pattern
-
+        """
+        Generates a unit cylinder with radius 1 and height 2,
+        producing exactly num_points. (z in [-1, 1])
+        """
+        height = 2.0
+        dz = height / num_points
+        z = np.linspace(-height/2 + dz/2, height/2 - dz/2, num_points)
+        golden_ratio = (1 + np.sqrt(5)) / 2.0
+        theta = 2 * np.pi * np.arange(num_points) / golden_ratio
         x = np.cos(theta)
         y = np.sin(theta)
-
         points = np.vstack((x, y, z)).T
         return points
 
     def generate_torus_points(num_points):
-        """ Generates a unit-radius torus. """
-        tube_radius = 1.0 / 3  
-        points = []
-        theta_spacing = 2 * np.pi / np.sqrt(num_points)
-        phi_spacing = 2 * np.pi / np.sqrt(num_points)
-
-        theta = 0
-        while theta < 2 * np.pi:
-            phi = 0
-            while phi < 2 * np.pi:
-                x = (1 + tube_radius * np.cos(phi)) * np.cos(theta)
-                y = (1 + tube_radius * np.cos(phi)) * np.sin(theta)
-                z = tube_radius * np.sin(phi)
-                points.append([x, y, z])
-                phi += phi_spacing
-            theta += theta_spacing
-        points = np.array(points)
-        bbox_size = np.ptp(points, axis=0).max()
+        """
+        Generates a unit torus with major radius 1 and tube radius 1/3 using a grid,
+        then samples exactly num_points.
+        """
+        grid_size = int(np.ceil(np.sqrt(num_points)))
+        thetas = np.linspace(0, 2 * np.pi, grid_size, endpoint=False)
+        phis = np.linspace(0, 2 * np.pi, grid_size, endpoint=False)
+        THETA, PHI = np.meshgrid(thetas, phis)
+        tube_radius = 1.0 / 3.0
+        x = (1 + tube_radius * np.cos(PHI)) * np.cos(THETA)
+        y = (1 + tube_radius * np.cos(PHI)) * np.sin(THETA)
+        z = tube_radius * np.sin(PHI)
+        points = np.vstack((x.ravel(), y.ravel(), z.ravel())).T
+        if points.shape[0] > num_points:
+            indices = np.random.choice(points.shape[0], num_points, replace=False)
+            points = points[indices]
+        elif points.shape[0] < num_points:
+            indices = np.random.choice(points.shape[0], num_points, replace=True)
+            points = points[indices]
         return points
 
     def generate_egg_carton_points(num_points):
-        """ Generates an egg-carton surface with the correct number of points. """
-        grid_size = int(np.sqrt(num_points))  # Compute a reasonable grid size
-        x = np.linspace(-1, 1, grid_size)
-        y = np.linspace(-1, 1, grid_size)
-        x, y = np.meshgrid(x, y)
-        
-        # Define the surface function
-        z = 0.1 * np.sin(x * np.pi) * np.cos(y * np.pi)  
-
-        # Create the point cloud
-        points = np.vstack([x.ravel(), y.ravel(), z.ravel()]).T
-
-        # Ensure correct number of points
-        if len(points) > num_points:
-            points = points[np.random.choice(len(points), num_points, replace=False)]
-
-        bbox_size = np.ptp(points, axis=0).max()
+        """
+        Generates an egg-carton surface defined on a grid over [-1, 1] × [-1, 1]
+        with z = 0.1 * sin(pi*x) * cos(pi*y). Then samples exactly num_points.
+        """
+        grid_size = int(np.ceil(np.sqrt(num_points)))
+        xs = np.linspace(-1, 1, grid_size)
+        ys = np.linspace(-1, 1, grid_size)
+        X, Y = np.meshgrid(xs, ys)
+        Z = 0.1 * np.sin(X * np.pi) * np.cos(Y * np.pi)
+        points = np.vstack((X.ravel(), Y.ravel(), Z.ravel())).T
+        if points.shape[0] > num_points:
+            indices = np.random.choice(points.shape[0], num_points, replace=False)
+            points = points[indices]
+        elif points.shape[0] < num_points:
+            indices = np.random.choice(points.shape[0], num_points, replace=True)
+            points = points[indices]
         return points
 
-    # Generate base shape at radius=1
+    # --- Select and Generate the Unit Shape ---
     if shape_name == "sphere":
-        points = generate_sphere_points(num_points)
+        points_unit = generate_sphere_points(num_points)
     elif shape_name == "cylinder":
-        points = generate_cylinder_points(num_points)
+        points_unit = generate_cylinder_points(num_points)
     elif shape_name == "torus":
-        points = generate_torus_points(num_points)
+        points_unit = generate_torus_points(num_points)
     elif shape_name == "egg_carton":
-        points = generate_egg_carton_points(num_points)
+        points_unit = generate_egg_carton_points(num_points)
     else:
         raise ValueError(f"Unknown shape: {shape_name}")
-
-    # Convert to Open3D PointCloud for normal estimation
-    pcd = o3d.geometry.PointCloud()
-    pcd.points = o3d.utility.Vector3dVector(points)
     
-    # Estimate normals
-    bbox_size = np.ptp(points, axis=0).max()
-    pcd.estimate_normals(search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=0.1 * bbox_size, max_nn=50))
+    # For each shape the scaling is simple: multiply by the desired_scale.
+    # (This sets the final dimensions exactly as expected by the area functions.)
+    scale_factor = desired_scale
+    points_scaled = points_unit * scale_factor
 
-    # Get normals as numpy array
-    normals = np.asarray(pcd.normals)
+    # Compute curvature on the unit shape (scale invariant).
+    curvatures = estimate_curvature(points_unit, k_fraction=k_fraction)
 
-    # Scale the points first
-    points *= radius
+    # The noise amplitude is tied directly to the desired_scale.
+    global_noise_level = perturbation_strength * desired_scale
 
-    # Apply perturbation along the normal direction after scaling
-    perturbed_points = add_noise(points, (bbox_fraction) * bbox_size)
+    # Optionally modulate noise by local curvature.
+    noise_factors = 1.0 / (1.0 + curvatures[:, None])
+    noise = noise_factors * np.random.uniform(-global_noise_level, global_noise_level, size=points_scaled.shape)
+    points_perturbed = points_scaled + noise
 
-    # Convert back to Open3D (only perturb pcd_perturbed)
-    pcd = o3d.geometry.PointCloud()
-    pcd.points = o3d.utility.Vector3dVector(points)  # Keep original unperturbed
-
+    # Create Open3D point clouds.
+    pcd_unperturbed = o3d.geometry.PointCloud()
+    pcd_unperturbed.points = o3d.utility.Vector3dVector(points_scaled)
+    
     pcd_perturbed = o3d.geometry.PointCloud()
-    pcd_perturbed.points = o3d.utility.Vector3dVector(perturbed_points)
+    pcd_perturbed.points = o3d.utility.Vector3dVector(points_perturbed)
+    
+    return pcd_unperturbed, pcd_perturbed
 
-    return pcd, pcd_perturbed
+
 
 def save_points_to_ply(points, filename):  
     with open(filename, 'w') as f:
@@ -909,7 +1000,8 @@ def parse_ply(file_path):
                 x, y, z = map(float, parts[:3])
                 points.append([x, y, z])
         logging.info("Assigned points from .ply to np array")
-        return np.array(points)
+        return np.array(points, dtype=np.float32)
+
     except FileNotFoundError:
         print(f"File not found: {file_path}")
         return None

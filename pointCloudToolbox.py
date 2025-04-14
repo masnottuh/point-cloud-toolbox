@@ -18,6 +18,8 @@ import pyvista as pv
 import os
 import pandas as pd
 import logging
+import gc
+from memory_profiler import profile
 
 class PointCloud:
 
@@ -44,10 +46,12 @@ class PointCloud:
         self.l2_norm = np.linalg.norm(self.points, 2)
         self.infinity_norm = np.linalg.norm(self.points, np.inf)
 
+    
     def read_from_file(self):
         points = np.loadtxt(self.file_path)
-        self.points = points[:, 0:3]
-        self.normals = points[:, 3:6]
+        self.points = points[:, 0:3].astype(np.float32)
+        self.normals = points[:, 3:6].astype(np.float32)
+        gc.collect()
 
         self.points[:, 0] -= np.max(self.points[:, 0])
         self.points[:, 1] -= np.max(self.points[:, 1])
@@ -61,20 +65,30 @@ class PointCloud:
         self.y_domain = [np.min(self.points[:, 1]), np.max(self.points[:, 1])]
         self.z_domain = [np.min(self.points[:, 2]), np.max(self.points[:, 2])]
 
-
+    
     def plant_kdtree(self, k_neighbors):
+
         self.k_neighbors = k_neighbors
-        # box_size = [int(np.ceil(self.voxel_size*self.k_neighbors)/2), int(np.ceil(self.voxel_size*self.k_neighbors)/2)]
 
-        # self.kdtree = sp.spatial.cKDTree(self.points, box_size) #to use box size for even distribution, CURRENTLY BROKEN
-        self.kdtree = sp.spatial.cKDTree(np.array(self.points))
-
-        self.dists = []
-        self.neighbor_indices = []
+        # Build KDTree using float32 data
+        self.kdtree = sp.spatial.cKDTree(np.array(self.points, dtype=np.float32))
+        
+        N = len(self.points)
+        # Preallocate arrays: use int32 for indices and float32 for distances.
+        self.dists = np.empty((N, k_neighbors), dtype=np.float32)
+        self.neighbor_indices = np.empty((N, k_neighbors), dtype=np.int32)
+        
         for i, point in enumerate(self.points):
-            dists, neighbor_indices = self.kdtree.query(np.array(point), k_neighbors+1) # +1 because will also return self
-            self.dists.append(dists[1:])
-            self.neighbor_indices.append(neighbor_indices[1:])
+            # Query the tree directly on the point (which is already float32)
+            dists, neighbor_indices = self.kdtree.query(point, k_neighbors+1)  # +1 to include the point itself
+            self.dists[i] = dists[1:]
+            self.neighbor_indices[i] = neighbor_indices[1:]
+        
+        # force garbage collection
+        import gc
+        gc.collect()
+
+
         
 
         # self.dists, self.neighbor_indices = self.kdtree.query(self.points, k_neighbors)
@@ -142,41 +156,41 @@ class PointCloud:
         self.points = centered.dot(rotation_matrix_x).dot(rotation_matrix_y).dot(rotation_matrix_z)
         self.points = self.points + center
 
-    def downsample_point_cloud_by_grid(self):
-        # Calculate the minimum and maximum coordinates of the point cloud
-        xyz = self.points[:, :3]
-        min_bounds = np.min(xyz, axis=0)
-        max_bounds = np.max(xyz, axis=0)
-        max_points_per_voxel=1
+    # def downsample_point_cloud_by_grid(self):
+    #     # Calculate the minimum and maximum coordinates of the point cloud
+    #     xyz = self.points[:, :3]
+    #     min_bounds = np.min(xyz, axis=0)
+    #     max_bounds = np.max(xyz, axis=0)
+    #     max_points_per_voxel=1
 
-        # Calculate the number of voxels in each dimension
-        num_voxels = np.ceil((max_bounds - min_bounds) / self.voxel_size).astype(int)
+    #     # Calculate the number of voxels in each dimension
+    #     num_voxels = np.ceil((max_bounds - min_bounds) / self.voxel_size).astype(int)
 
-        # Calculate the indices of the voxels for each point
-        voxel_indices = ((self.points[:, :3] - min_bounds) / self.voxel_size).astype(int)
+    #     # Calculate the indices of the voxels for each point
+    #     voxel_indices = ((self.points[:, :3] - min_bounds) / self.voxel_size).astype(int)
 
-        # Initialize a dictionary to store the indices of points in each voxel
-        voxel_point_indices = {}
+    #     # Initialize a dictionary to store the indices of points in each voxel
+    #     voxel_point_indices = {}
 
-        # Group point indices into voxels
-        for i, indices in enumerate(voxel_indices):
-            voxel_key = tuple(indices)
-            if voxel_key not in voxel_point_indices:
-                voxel_point_indices[voxel_key] = []
-            voxel_point_indices[voxel_key].append(i)
+    #     # Group point indices into voxels
+    #     for i, indices in enumerate(voxel_indices):
+    #         voxel_key = tuple(indices)
+    #         if voxel_key not in voxel_point_indices:
+    #             voxel_point_indices[voxel_key] = []
+    #         voxel_point_indices[voxel_key].append(i)
 
-        # Select points from each voxel with up to 'max_points_per_voxel' points
-        selected_indices = []
-        for indices in voxel_point_indices.values():
-            selected_indices.extend(indices[:max_points_per_voxel])
+    #     # Select points from each voxel with up to 'max_points_per_voxel' points
+    #     selected_indices = []
+    #     for indices in voxel_point_indices.values():
+    #         selected_indices.extend(indices[:max_points_per_voxel])
 
-        # Extract the selected points
-        downsampled_points = self.points[selected_indices]
-        downsampled_normals = self.normals[selected_indices]
+    #     # Extract the selected points
+    #     downsampled_points = self.points[selected_indices]
+    #     downsampled_normals = self.normals[selected_indices]
         
 
-        # Update the class attribute 'points' with the downsampled points
-        return downsampled_points, downsampled_normals
+    #     # Update the class attribute 'points' with the downsampled points
+    #     return downsampled_points, downsampled_normals
 
     @staticmethod
     def running_mean_outlier(x, N):
@@ -316,35 +330,34 @@ class PointCloud:
 
     @staticmethod
     def fit_quadratic_surface(points):
+        """
+        Fit a quadratic surface of the form:
+        
+            z = A*a^2 + B*b^2 + C*a*b + D*a + E*b + F
+        
+        to a set of 3D points using linear least squares.
+        
+        Parameters
+        ----------
+        points : np.ndarray
+            A (N, 3) array of 3D points, where columns correspond to a, b, and z.
+        
+        Returns
+        -------
+        params : np.ndarray
+            A 1D array of fitted parameters [A, B, C, D, E, F].
+        """
+        points = np.array(points, dtype=np.float32)
+        if points.ndim != 2 or points.shape[1] != 3:
+            raise ValueError("Input points must have shape (N, 3)")
         a = points[:, 0]
         b = points[:, 1]
         c = points[:, 2]
-
-        def quadratic_surface(params, a, b):
-            A, B, C, D, E, F = params
-            return A*a**2 + B*b**2 + C*a*b + D*a + E*b + F
-
-        def objective_function(params, a, b, c):
-            return quadratic_surface(params, a, b) - c
-
-        initial_guess = np.ones(6)
-
-        # Debugging outputs
-        if not np.all(np.isfinite(a)):
-            print(f"Non-finite values in a: {a}")
-        if not np.all(np.isfinite(b)):
-            print(f"Non-finite values in b: {b}")
-        if not np.all(np.isfinite(c)):
-            print(f"Non-finite values in c: {c}")
-
-        if not np.all(np.isfinite(a)) or not np.all(np.isfinite(b)) or not np.all(np.isfinite(c)):
-            raise ValueError("Non-finite values in points: a={}, b={}, c={}".format(a, b, c))
-
-        result = least_squares(objective_function, initial_guess, args=(a, b, c))
-        if not result.success:
-            raise ValueError("Least squares optimization failed")
-
-        return result.x
+        if not np.all(np.isfinite(points)):
+            raise ValueError("Input contains non-finite values.")
+        X = np.column_stack((a**2, b**2, a*b, a, b, np.ones_like(a))).astype(np.float32)
+        params, residuals, rank, s = np.linalg.lstsq(X, c, rcond=None)
+        return params
     
     @staticmethod
     def fit_implicit_quadric_surface(points):
@@ -715,63 +728,77 @@ class PointCloud:
 
 
    
-
-    def explicit_quadratic_neighbor_study(self):
-        logging.info("Inside explicit_quadratic_neighbor_study()")
-        points = self.points
-
-        self.random_indexes = np.random.randint(0, len(self.points), len(self.points)//6)
-        random_indexes = self.random_indexes
-        random_points = self.points[random_indexes]
-
-        test_results = {}
-        explicit_converged_neighbors = []
-
-        for i, point in enumerate(random_points):
-            test_results[point[0]] = {}
-            test_results[point[0]]['gaussian'] = []
-            test_results[point[0]]['mean'] = []
-            test_results[point[0]]['principal_1'] = []
-            test_results[point[0]]['principal_2'] = []
-            test_results[point[0]]['neighbors'] = []
-
-            error_points = 0
-            for num_neighbors in range(3, 99):
-                neighbor_inds = self.kdtree.query(point, num_neighbors+1)[1]
-                points = self.points[neighbor_inds]
-                centered_points = points - point
-
-                points = self.get_best_fit_plane_and_rotate(centered_points)
-                try:
-                    coefs = self.fit_quadratic_surface(points)
-                except:
-                    logging.info("Fitting EQNS Failure")
-                    error_points+=1
-                    coefs = 0, 0, 0, 0, 0, 0
-                
-                normal = self.normals[i]
-                K_g, K_h, k1, k2, _ = self.calculate_explicit_quadratic_curvatures(coefs)
-
-                test_results[point[0]]['neighbors'].append(num_neighbors)
-                test_results[point[0]]['gaussian'].append(K_g)
-                test_results[point[0]]['mean'].append(K_h)
-                test_results[point[0]]['principal_1'].append(k1)
-                test_results[point[0]]['principal_2'].append(k2)
-
-                # width_of_window = 24 #max of num_neighbors//4 
     
-                if len(test_results[point[0]]['gaussian']) > 10:  #Have to skip first iteration
-                    maxk = max(test_results[point[0]]['gaussian'][-6:]) #Using gaussian to ensure convergence in principal_1 and p2 directions
-                    mink = min(test_results[point[0]]['gaussian'][-6:])
-                    difference = abs(round(maxk - mink))
-                    if difference < 1e-7:
-                        explicit_converged_neighbors.append(num_neighbors)
-                        break
-                    else:
-                        pass    
+    def explicit_quadratic_neighbor_study(self, tol=1e-7, sample_size=500, lower_bound=3, upper_bound=99):
+        """
+        Determine the number of neighbors needed for convergence in the explicit quadratic
+        curvature estimation for a random subset of points. Uses binary search for each point
+        to find the smallest neighbor count for which the Gaussian curvature (K_g) computed from the
+        quadratic surface is stable (i.e. the difference between using n and n+1 neighbors is below tol).
+        
+        Parameters:
+        tol: tolerance for convergence of curvature values.
+        sample_size: maximum number of random points to sample.
+        lower_bound: minimum neighbor count to try.
+        upper_bound: maximum neighbor count to try.
+        
+        Returns:
+        The average converged neighbor count (an integer) plus one.
+        """
+        logging.info("Inside explicit_quadratic_neighbor_study()")
+        
+        # Reduce the sample size to a fixed number to speed up processing.
+        num_total = len(self.points)
+        sample_size = min(sample_size, num_total)
+        random_indexes = np.random.randint(0, num_total, sample_size)
+        random_points = self.points[random_indexes]
+        
+        def compute_curvatures_for_point(point, num_neighbors):
+            """Compute quadratic surface curvature for a given point and neighbor count."""
+            # Query neighbors (adding 1 to include the point itself)
+            neighbor_inds = self.kdtree.query(point, num_neighbors + 1)[1]
+            nbrs = self.points[neighbor_inds]
+            centered = nbrs - point  # center the neighborhood
+            # Rotate the neighborhood to a best-fit plane
+            rotated = self.get_best_fit_plane_and_rotate(centered)
+            try:
+                coefs = self.fit_quadratic_surface(rotated)
+            except Exception:
+                coefs = (0, 0, 0, 0, 0, 0)
+            # Calculate curvatures (K_g = Gaussian curvature, K_h = mean curvature, etc.)
+            K_g, K_h, k1, k2, _ = self.calculate_explicit_quadratic_curvatures(coefs)
+            return K_g, K_h, k1, k2
 
-        converged_neighbors_int = (sum(explicit_converged_neighbors)//len(explicit_converged_neighbors)) + 1 #Plus one cause int div rounds down 
-        return converged_neighbors_int
+        def find_convergence_neighbor_count(point, tol, lower, upper):
+            """
+            Use binary search to find the minimal neighbor count for which the Gaussian curvature
+            converges (i.e. the absolute difference between K_g computed at count n and n+1 is < tol).
+            """
+            best = None
+            while lower <= upper:
+                mid = (lower + upper) // 2
+                K_g1, _, _, _ = compute_curvatures_for_point(point, mid)
+                K_g2, _, _, _ = compute_curvatures_for_point(point, mid + 1)
+                if abs(K_g2 - K_g1) < tol:
+                    best = mid  # Candidate found; try to lower the bound further.
+                    upper = mid - 1
+                else:
+                    lower = mid + 1
+            if best is None:
+                best = upper
+            return best
+
+        converged_neighbors = []
+        # Iterate over the random sample of points
+        for point in random_points:
+            conv = find_convergence_neighbor_count(point, tol, lower_bound, upper_bound)
+            converged_neighbors.append(conv)
+        
+        if len(converged_neighbors) == 0:
+            return 0  # or an appropriate fallback value
+        # Return the average converged neighbor count plus one (to adjust for rounding)
+        return int(np.mean(converged_neighbors)) + 1
+
 
             #To Sam: THESE PLOTTING FEATURES WERE HERE BEFORE BUT I DONT KNOW HOW TO USE IT -Gavin
 
